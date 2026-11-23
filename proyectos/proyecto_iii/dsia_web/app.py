@@ -8,11 +8,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from .observability import ObservabilityMiddleware, RequestMetrics
 from .snapshot import Snapshot, read_snapshot
 
 LOG = logging.getLogger("uvicorn.error").getChild("dsia")
@@ -53,11 +55,14 @@ def create_app(snapshot_path: Path | None = None) -> Starlette:
     async def schema(request: Request) -> JSONResponse:
         return JSONResponse(Snapshot.model_json_schema())
 
-    return Starlette(lifespan=lifespan, routes=[
+    metrics = RequestMetrics()
+    application = Starlette(lifespan=lifespan, routes=[
         Route("/", dashboard), Route("/health", health),
         Route("/api/v1/snapshot", report), Route("/api/v1/snapshot/schema", schema),
         Mount("/static", app=StaticFiles(directory=STATIC)),
-    ])
+    ], middleware=[Middleware(ObservabilityMiddleware, metrics=metrics)])
+    application.state.metrics = metrics
+    return application
 
 
 app = create_app()
