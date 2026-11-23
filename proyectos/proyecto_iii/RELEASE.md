@@ -21,7 +21,7 @@ Comprobación antes de etiquetar: pytest del III con cobertura, `smoke_test.sh` 
 ## Rollback
 
 1. **Datos (snapshot).** Conserva el snapshot anterior. Si el nuevo no supera `smoke_test.sh`, apunta `DSIA_SNAPSHOT` al anterior y reinicia; un snapshot inválido deja `/health` en 503 y no se sirve.
-2. **Código (tag).** Vuelve al tag anterior y redepliega ese commit: `git checkout <tag-anterior>` y `docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii:<tag-anterior> .`, o en Render *Rollback* al deploy anterior desde la pestaña *Deploys* (con `autoDeploy` activo, desactívalo antes para que un commit nuevo no lo pise) o «Manual Deploy» del commit del tag. Antes del primer tag, la referencia es el commit `ab75ded` de la RC1 en main. Tras el rollback, repetir `smoke_test.sh` contra la URL o el contenedor.
+2. **Código (tag).** Vuelve al tag anterior y redepliega ese commit: `git checkout <tag-anterior>` y `docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii:<tag-anterior> .`, o en Render *Rollback* al deploy anterior desde la pestaña *Deploys* (con `autoDeploy` activo, desactívalo antes para que un commit nuevo no lo pise) o «Manual Deploy» del commit del tag. Antes del primer tag, la referencia es el merge `a5a5b9b` del PR #1 en `main` (o `ab75ded`, la versión anterior). Tras el rollback, repetir `smoke_test.sh` contra la URL o el contenedor.
 
 ## Hallazgos corregidos durante la revisión
 

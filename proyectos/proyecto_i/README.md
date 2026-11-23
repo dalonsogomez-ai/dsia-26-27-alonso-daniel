@@ -203,7 +203,7 @@ pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-
 
 `>>` Ejecuciones y evidencia: [GitHub Actions](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml).
 
-`=>` Último run verde de `main` (commit `ab75ded`, 23/11/2026): [45227267528](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45227267528), en Ubuntu / Python 3.12. Corresponde a `main` antes de las mejoras del 23/11 descritas en [AI_USAGE.md](AI_USAGE.md); las cifras vigentes de arriba son locales hasta que esas mejoras se integren y su run salga en verde.
+`=>` Último run verde de `main` (merge `a5a5b9b`, 23/11/2026): [45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056), en Ubuntu / Python 3.12, con las cifras vigentes de arriba (178 tests y 99,31 %).
 
 `>>` Run histórico de la reorganización del **13/10/2026**: [38464158185](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/38464158185), con 98 tests y 99,25 % de cobertura. Checklist de comprobaciones: [VERIFICACION.md](VERIFICACION.md).
 

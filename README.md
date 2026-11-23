@@ -78,7 +78,7 @@ PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh htt
 - `>` **proyectos-ii-y-iii**: pytest del II (umbral 80 %) y `marimo check`, receta de la CLI del II con el sha256 de la demo, pytest del III (umbral 90 %), lote demo, smoke HTTP y Playwright contra el backend real. Publica el artefacto `dsia-dashboard-sintetico` (captura y journal).
 - `>` **proyecto-iii-docker**: construye la imagen, espera al `HEALTHCHECK` y pasa el smoke contra el contenedor.
 
-`=>` Último run verde de `main` antes de esta rama: [45227267528](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45227267528) (commit `ab75ded`).
+`=>` Último run verde de `main`: [45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056) (merge `a5a5b9b` del [PR #1](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/1)), con los tres jobs en verde; el mismo árbol pasó antes en el PR ([45270756811](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45270756811)). Antes de integrar, el run del PR detectó que el `sha256` de la demo del II cambiaba entre macOS y Linux y se corrigió (`d3bff34`).
 
 ## Uso de IA
 
@@ -109,7 +109,7 @@ PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh htt
 ## 23/11/2026 -> Revisión de cumplimiento
 
 - `->` Auditar los tres proyectos contra los enunciados del profesor (`dmartincc/dsia-26-27` @`b76b950`).
-- `~>` Rama `mejoras/cumplimiento-requisitos` con commits atómicos por proyecto, hecha con Claude Code (modelo Claude Opus 5.5) y citada en cada `AI_USAGE.md`.
+- `~>` Rama `mejoras/cumplimiento-requisitos` con commits atómicos por proyecto, hecha con Claude Code (modelo Claude Opus 5.5), citada en cada `AI_USAGE.md` e integrada en `main` con el [PR #1](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/1) tras pasar el CI.
 - `>` README raíz como índice, CI con tres jobs, trazabilidad del I y `.mailmap` para unificar la identidad del autor.
 - `=>` Suites del I, II y III en verde en local; el CI remoto de la rama queda pendiente de push.
 

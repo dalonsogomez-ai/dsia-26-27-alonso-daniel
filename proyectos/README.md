@@ -49,6 +49,6 @@ Convierte el flujo del II en una aplicación end-to-end. El dashboard permite ex
 
 ## Verificación de las entregas
 
-La matriz de trazabilidad enlaza los enunciados docentes de los Proyectos I, II y III con el código, las pruebas y la documentación correspondiente. La ejecución verificada de GitHub Actions incluye las tres suites y el artefacto del III con la captura del dashboard y el journal de la demo.
+La matriz de trazabilidad enlaza los enunciados docentes de los Proyectos I, II y III con el código, las pruebas y la documentación correspondiente. El run [45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056) de `main` ejecuta los tres jobs (I con 178 tests, II y III con sus umbrales de cobertura, smoke y Playwright, y la imagen Docker) y publica el artefacto del III con la captura del dashboard y el journal de la demo.
 
-[Matriz de trazabilidad](../docs/TRAZABILIDAD_DSIA.md) · [Workflow](../.github/workflows/ci.yml) · [Último run verde de `main`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45227267528) · [Repositorio de entrega](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel)
+[Matriz de trazabilidad](../docs/TRAZABILIDAD_DSIA.md) · [Workflow](../.github/workflows/ci.yml) · [Último run verde de `main`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056) · [Repositorio de entrega](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel)

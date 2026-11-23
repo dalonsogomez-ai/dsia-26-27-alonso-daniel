@@ -130,4 +130,4 @@ El [Proyecto III](../proyecto_iii/README.md) reutiliza `infer` y `AIClient.analy
 | Repo GitHub del III | Se trabaja en el mismo repositorio del alumno | II y III en el mismo árbol |
 | Historial de octubre | No se alteran fechas ni se fabrican commits | No subsanable retroactivamente |
 | Artefactos o instrucciones claras de reentrenamiento | Comandos sin claves y entorno fijado; modelos reales ignorados | Implementado |
-| CI | [.github/workflows/ci.yml](../../.github/workflows/ci.yml), mock y bloqueo de red en tests | Consultar el run del commit en Actions |
+| CI | [.github/workflows/ci.yml](../../.github/workflows/ci.yml), mock y bloqueo de red en tests | Run [45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056) de `main` |

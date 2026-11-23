@@ -17,7 +17,7 @@
 | AAA, assert, raises, parametrize, fixture | Aplicados en la suite; AAA marcado en tests de A y de B; fixtures en memoria y `tmp_path` |
 | ≥1 integración | **4 tests de integración**, sin red: checkpoint 140/10, muestra sintética de B (296/5 y las tres métricas) y ambas CLI con `python -m` |
 | CI para ambas partes | `.github/workflows/ci.yml`, Python 3.12, push a main y pull_request, gate 60 % |
-| GitHub Actions en verde | Último verde de `main`: run [45227267528](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45227267528) (commit `ab75ded`, anterior a las mejoras del 23/11) |
+| GitHub Actions en verde | Último verde de `main`: run [45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056) (merge `a5a5b9b`, con estas mismas cifras) |
 | Documentación de ejecución y tests | `proyectos/proyecto_i/README.md` |
 | Uso de IA documentado | [AI_USAGE.md](AI_USAGE.md) |
 | Datos grandes y secretos excluidos de Git | Descargas y resultados ignorados; los scripts usan el perfil local de Alpaca |
@@ -40,7 +40,7 @@ python -m acciones_app.cli --input data/sample/acciones_muestra.csv --output dat
 
 `>>` Cada test nuevo se comprobó rompiendo temporalmente el código que cubre (se puso en rojo) y restaurándolo. Detalle de los cambios en [AI_USAGE.md](AI_USAGE.md).
 
-`~>` Las cifras vigentes son locales: el último run verde de GitHub Actions ([45227267528](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45227267528)) corresponde a `main` en `ab75ded`, antes de estas mejoras. Quedan por confirmar en CI cuando se integren en `main`.
+`~>` Las cifras vigentes coinciden con el run [45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056) de `main` (merge `a5a5b9b`), que ejecuta el mismo job `proyecto-i`.
 
 ## Verificación del 13 de octubre de 2026 (histórica)
 
