@@ -1,10 +1,11 @@
 # Contrato HTTP de SwarmTrader DSIA
 
-Servicio de lectura de un snapshot construido y validado fuera del servidor. El contrato del documento es la versión 1. Las predicciones son retornos decimales a 21 sesiones.
+Servicio Starlette que lee un snapshot construido y validado fuera del servidor y expone análisis bajo demanda con el cliente de IA del Proyecto II. El contrato del documento es la versión 1. Las predicciones son retornos decimales a 21 sesiones, calculadas por lotes con el modelo sklearn congelado: el enunciado del II admite el endpoint de predicción «o integrado», y aquí van integradas en `/api/v1/snapshot` y además por símbolo en `/api/v1/predictions/{symbol}`.
 
 | Método | Ruta | Resultado |
 | --- | --- | --- |
-| GET | / | Dashboard. Carga el informe con una petición a la API |
+| GET | / | Dashboard. Carga el informe, el panel Operación y el análisis con peticiones a la API |
+| GET | /static/… | `index.html`, `dashboard.js` y `style.css` propios; 404 si no existen |
 | GET | /health | 200 con `status=ready`, `run_id`, `as_of` y `checks`, o 503 con `status=unavailable` y `checks` |
 | GET | /api/v1/snapshot | 200 con procedencia, métricas, predicciones y explicación, o 503 con error tipado |
 | GET | /api/v1/snapshot/schema | 200 con JSON Schema del documento |
@@ -12,6 +13,15 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 | GET | /api/v1/pipeline?limit=N | 200 con los últimos N eventos (1–50, 20 por defecto) del journal de `DSIA_JOURNAL`; 422 `invalid_limit`; 404 `journal_not_configured`; 503 `journal_unavailable` |
 | GET | /api/v1/metrics | 200 con `uptime_s`, `requests_total`, contadores por ruta y estado, latencia media y p95 aproximada de las últimas 1024 peticiones y `run_id` cargado (`null` sin snapshot) |
 | GET | /api/v1/predictions/{symbol} | 200 con predicción, posición en el ranking y resumen de entrada del símbolo; 422 `invalid_symbol` si no cumple `^[A-Z0-9.]{1,32}$`; 404 `symbol_not_found`; 503 `snapshot_unavailable` |
+
+Cualquier otra ruta responde 404 y un método no admitido, 405. Variables de entorno: `DSIA_SNAPSHOT`, `DSIA_JOURNAL`, `DSIA_API_KEY`, `AI_PROVIDER`, `HF_TOKEN`, `HF_MODEL`, `HF_TIMEOUT`, `HF_MAX_TOKENS` y `HF_INFERENCE_PROVIDER` (ver [`.env.example`](.env.example)).
+
+```bash
+curl -s http://127.0.0.1:8765/api/v1/predictions/DEMO01
+curl -s -X POST -H 'Content-Type: application/json' -d '{"symbol": "DEMO01"}' http://127.0.0.1:8765/api/v1/analyze
+curl -s 'http://127.0.0.1:8765/api/v1/pipeline?limit=4'
+curl -s http://127.0.0.1:8765/api/v1/metrics
+```
 
 ## Análisis bajo demanda
 
