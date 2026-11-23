@@ -8,6 +8,7 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 | GET | /health | 200 con `status=ready`, `run_id`, `as_of` y `checks`, o 503 con `status=unavailable` y `checks` |
 | GET | /api/v1/snapshot | 200 con procedencia, métricas, predicciones y explicación, o 503 con error tipado |
 | GET | /api/v1/snapshot/schema | 200 con JSON Schema del documento |
+| GET | /api/v1/predictions/{symbol} | 200 con predicción, posición en el ranking y resumen de entrada del símbolo; 422 `invalid_symbol` si no cumple `^[A-Z0-9.]{1,32}$`; 404 `symbol_not_found`; 503 `snapshot_unavailable` |
 
 ## Salud
 

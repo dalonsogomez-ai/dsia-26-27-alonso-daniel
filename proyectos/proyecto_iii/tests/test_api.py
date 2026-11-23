@@ -43,6 +43,40 @@ def test_health_reads_journal_from_environment(demo_run, monkeypatch):
         assert client.get("/health").json()["checks"]["journal_available"] is False
 
 
+def test_prediction_by_symbol_returns_rank_and_input_summary(demo_run):
+    snapshot = demo_run.snapshot
+    ranked = sorted(snapshot.predictions, key=lambda row: -row.predicted_return)
+    chosen = ranked[2]
+    summary = next(row for row in snapshot.input_summary if row.symbol == chosen.symbol)
+    with TestClient(create_app(demo_run.path)) as client:
+        response = client.get(f"/api/v1/predictions/{chosen.symbol}")
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": snapshot.run_id, "as_of": str(snapshot.as_of), "model": snapshot.model,
+        "horizon_sessions": 21, "symbol": chosen.symbol, "predicted_return": chosen.predicted_return,
+        "rank": 3, "universe": 8, "input": summary.model_dump(mode="json"),
+    }
+
+
+@pytest.mark.parametrize("symbol", ["aapl", "A" * 33, "A$B", "AAPL%0A", "%20"])
+def test_prediction_rejects_invalid_symbol_with_422(demo_run, symbol):
+    with TestClient(create_app(demo_run.path)) as client:
+        response = client.get(f"/api/v1/predictions/{symbol}")
+    assert response.status_code == 422
+    assert response.json()["error"] == "invalid_symbol"
+
+
+def test_prediction_unknown_symbol_is_404_and_without_snapshot_is_503(demo_run, tmp_path):
+    with TestClient(create_app(demo_run.path)) as client:
+        missing = client.get("/api/v1/predictions/ZZZZ")
+    assert (missing.status_code, missing.json()["error"]) == (404, "symbol_not_found")
+    with TestClient(create_app(tmp_path / "falta.json")) as client:
+        unavailable = client.get("/api/v1/predictions/AAPL")
+        invalid = client.get("/api/v1/predictions/aapl")
+    assert (unavailable.status_code, unavailable.json()["error"]) == (503, "snapshot_unavailable")
+    assert invalid.status_code == 422
+
+
 def test_oversized_snapshot_is_rejected_and_service_reports_503(tmp_path):
     path = tmp_path / "snapshot.json"
     path.write_bytes(b" " * 2_000_001)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from .snapshot import Snapshot, read_snapshot
 
 LOG = logging.getLogger("uvicorn.error").getChild("dsia")
 STATIC = Path(__file__).with_name("static")
+SYMBOL = re.compile(r"^[A-Z0-9.]{1,32}$")
 
 
 def utc_now() -> datetime:
@@ -87,10 +89,31 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
     async def schema(request: Request) -> JSONResponse:
         return JSONResponse(Snapshot.model_json_schema())
 
+    async def prediction(request: Request) -> JSONResponse:
+        symbol = request.path_params["symbol"]
+        if not SYMBOL.fullmatch(symbol):
+            return error_response(request, 422, "invalid_symbol",
+                                  "El símbolo debe cumplir ^[A-Z0-9.]{1,32}$.")
+        snapshot: Snapshot | None = request.app.state.snapshot
+        if snapshot is None:
+            return error_response(request, 503, "snapshot_unavailable", "No hay un informe válido cargado.")
+        ranked = sorted(snapshot.predictions, key=lambda row: -row.predicted_return)
+        position = next((index for index, row in enumerate(ranked, 1) if row.symbol == symbol), None)
+        if position is None:
+            return error_response(request, 404, "symbol_not_found", "El símbolo no está en el informe cargado.")
+        inputs = {row.symbol: row.model_dump(mode="json") for row in snapshot.input_summary or ()}
+        return JSONResponse({
+            "run_id": snapshot.run_id, "as_of": str(snapshot.as_of), "model": snapshot.model,
+            "horizon_sessions": snapshot.horizon_sessions, "symbol": symbol,
+            "predicted_return": ranked[position - 1].predicted_return, "rank": position,
+            "universe": len(ranked), "input": inputs.get(symbol),
+        }, headers={"Cache-Control": "no-store"})
+
     metrics = RequestMetrics()
     application = Starlette(lifespan=lifespan, routes=[
         Route("/", dashboard), Route("/health", health),
         Route("/api/v1/snapshot", report), Route("/api/v1/snapshot/schema", schema),
+        Route("/api/v1/predictions/{symbol}", prediction),
         Mount("/static", app=StaticFiles(directory=STATIC)),
     ], middleware=[Middleware(ObservabilityMiddleware, metrics=metrics)])
     application.state.metrics = metrics
