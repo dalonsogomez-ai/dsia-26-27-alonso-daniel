@@ -20,6 +20,8 @@ from .data import DataError, FEATURES
 from .models import SwarmRegressor, ridge_model
 from .preparation import load_prepared
 
+LOG = logging.getLogger(__name__)
+
 
 def metrics(y, prediction) -> dict[str, float]:
     return {'rmse': float(root_mean_squared_error(y, prediction)),
@@ -42,7 +44,7 @@ def train_prepared(run: Path, *, ledger: Path | None = None) -> dict:
         model.fit(X, y)
         predictions[name] = model.predict(validation.loc[:, FEATURES])
         scores[name] = metrics(validation['target'], predictions[name])
-        logging.info('Validation model=%s rmse=%.6f', name, scores[name]['rmse'])
+        LOG.info('Validation model=%s rmse=%.6f', name, scores[name]['rmse'])
     winner = min(scores, key=lambda name: scores[name]['rmse'])
     diagnostic = validation[['date', 'symbol', 'target_end', 'target']].copy()
     diagnostic['prediction'] = predictions[winner]

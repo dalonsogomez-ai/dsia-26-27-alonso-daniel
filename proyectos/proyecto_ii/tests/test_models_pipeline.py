@@ -172,6 +172,48 @@ def test_empirical_mode_keeps_upstream_small_universe_diagnostic(trained):
 
 
 @pytest.mark.integration
+def test_stage_logs_for_load_inference_and_ai(trained, tmp_path, caplog, monkeypatch):
+    import logging
+    data, run, _, report = trained
+    monkeypatch.setenv('HF_TOKEN', 'token-que-no-debe-aparecer-en-logs')
+    caplog.set_level(logging.INFO)
+    run_pipeline(data, run / 'model.joblib', tmp_path / 'logged.json', AIClient(), scenarios=100)
+    by_logger = {record.name: record.getMessage() for record in caplog.records}
+    assert 'rows=3000 symbols=6' in by_logger['swarmtrade_app.data']
+    inference = next(r.getMessage() for r in caplog.records if r.getMessage().startswith('Inferencia'))
+    assert f"model={report['selected']}" in inference and 'artifact_sha256=' in inference
+    assert 'mean_prediction=' in inference and 'as_of=' in inference
+    assert any('converged=True' in r.getMessage() for r in caplog.records)
+    assert any('ai_status=completed' in r.getMessage() for r in caplog.records if r.name.endswith('ai_client'))
+    assert 'token-que-no-debe-aparecer-en-logs' not in caplog.text
+
+
+def test_hf_failure_log_names_error_type_without_secret(caplog, monkeypatch):
+    import logging
+    import huggingface_hub
+    from swarmtrade_app.ai_client import AnalysisRequest
+    class Broken:
+        def __init__(self, **kwargs):
+            raise TimeoutError('secreto-en-el-mensaje')
+    monkeypatch.setenv('HF_TOKEN', 'secreto-en-el-mensaje')
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', Broken)
+    caplog.set_level(logging.INFO)
+    with pytest.raises(AIClientError):
+        AIClient('hf').analyze(AnalysisRequest('2026-09-28', 'ridge', 21, 6, 0.01, 0.06, 'synthetic'))
+    assert 'error_type=TimeoutError' in caplog.text and 'ai_status=failed' in caplog.text
+    assert 'secreto-en-el-mensaje' not in caplog.text
+
+
+def test_cli_log_level_filters_stage_logs(bars_file, tmp_path, caplog):
+    import logging
+    from swarmtrade_app.cli import main
+    caplog.set_level(logging.INFO)  # > Restaura el nivel raíz al terminar el test.
+    assert main(['--log-level', 'WARNING', 'inspect', '--data', str(bars_file),
+                 '--output', str(tmp_path / 'insp')]) == 0
+    assert not [r for r in caplog.records if r.levelno < 30 and r.name.startswith(('swarmtrade_app', 'matplotlib'))]
+
+
+@pytest.mark.integration
 def test_cli_training_inference_and_evaluation(bars_file, tmp_path, capsys):
     from swarmtrade_app.cli import main
     run = tmp_path / 'cli-run'

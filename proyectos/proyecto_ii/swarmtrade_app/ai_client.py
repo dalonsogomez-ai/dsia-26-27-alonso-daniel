@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 from dataclasses import dataclass
+from time import perf_counter
+
+LOG = logging.getLogger(__name__)
 
 
 class AIClientError(RuntimeError):
@@ -47,6 +51,7 @@ class AIClient:
         if not all(math.isfinite(v) for v in (request.mean_prediction, request.validation_rmse)):
             raise AIClientError('Resumen con valores no finitos')
         if self.provider == 'mock':
+            LOG.info('IA provider=mock model=mock-determinista-v1 latency_ms=0 ai_status=completed')
             return AIResponse('mock', 'chat_completion', 'mock-determinista-v1',
                               f'[mock] Modelo {request.model}; horizonte {request.horizon} sesiones; '
                               f'{request.symbols} símbolos; media predicha {request.mean_prediction:.4%}; '
@@ -55,6 +60,8 @@ class AIClient:
         token = os.environ.get('HF_TOKEN', '').strip()
         if not token:
             raise AIClientError('Falta HF_TOKEN en el entorno')
+        # > Nunca se registra el token: solo proveedor, modelo, latencia, estado y tipo de error.
+        start = perf_counter()
         # > Solo se envían agregados; los datos crudos y símbolos permanecen locales.
         payload = {'date': request.as_of, 'model': request.model, 'horizon_sessions': request.horizon,
                    'n_symbols': request.symbols, 'mean_prediction': request.mean_prediction,
@@ -70,6 +77,11 @@ class AIClient:
             text = result.choices[0].message.content
             if not isinstance(text, str) or not text.strip():
                 raise ValueError('Respuesta vacía')
+            LOG.info('IA provider=huggingface inference_provider=%s model=%s latency_ms=%.0f ai_status=completed',
+                     self.inference_provider, self.model, (perf_counter() - start) * 1000)
             return AIResponse('huggingface', 'chat_completion', self.model, text.replace(token, '[REDACTED]'))
-        except Exception:
+        except Exception as exc:
+            LOG.warning('IA provider=huggingface inference_provider=%s model=%s latency_ms=%.0f ai_status=failed '
+                        'error_type=%s', self.inference_provider, self.model,
+                        (perf_counter() - start) * 1000, type(exc).__name__)
             raise AIClientError('Inferencia HF fallida; comprueba red, permisos, saldo y modelo/proveedor') from None

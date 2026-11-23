@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,7 @@ from ._vendor.features import FACTOR_NAMES, compute_features, forward_returns
 
 FEATURES = tuple(FACTOR_NAMES)
 WARMUP = 252
+LOG = logging.getLogger(__name__)
 
 
 class DataError(ValueError):
@@ -58,6 +60,8 @@ def load_bars(path: Path) -> pd.DataFrame:
             raise DataError('Relaciones OHLC incoherentes')
     if bars['symbol'].nunique() < 5:
         raise DataError('Se requieren cinco símbolos para los factores cross-sectional')
+    LOG.info('Barras cargadas file=%s rows=%d symbols=%d dates=%d start=%s end=%s', Path(path).name, len(bars),
+             bars['symbol'].nunique(), bars['date'].nunique(), bars['date'].min().date(), bars['date'].max().date())
     return bars.sort_values(['date', 'symbol']).reset_index(drop=True)
 
 

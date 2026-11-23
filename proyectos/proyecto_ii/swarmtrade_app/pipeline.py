@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import logging
 import math
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from ._vendor.conviction import (ConvictionConfig, _ScenarioBank, allocate,
                                  certainty_equivalent, solve_simplex)
 from .ai_client import AIClient, AnalysisRequest
 from .data import DataError, FEATURES, feature_panel, file_sha256, load_bars
+
+LOG = logging.getLogger(__name__)
 
 
 def infer(data: Path, artifact_path: Path) -> tuple[dict, dict, pd.DataFrame]:
@@ -47,6 +50,8 @@ def infer(data: Path, artifact_path: Path) -> tuple[dict, dict, pd.DataFrame]:
                               for s, p in zip(latest['symbol'], prediction)],
               'research_status': 'NO ACCIONABLE / ventaja no demostrada',
               'upstream_version': '1.4.0', 'execution': 'none'}
+    LOG.info('Inferencia as_of=%s model=%s symbols=%d artifact_sha256=%s mean_prediction=%.6f',
+             summary.as_of, name, summary.symbols, report['artifact_sha256'][:12], summary.mean_prediction)
     return report, artifact, bars
 
 
@@ -99,6 +104,10 @@ def conviction(report: dict, artifact: dict, bars: pd.DataFrame, *, risk_aversio
                             'El óptimo es condicional a estos escenarios, no a todos los futuros reales.'] + bank.notes}
     else:
         raise DataError('mean_source debe ser model o empirical')
+    info = output.get('info', {})
+    LOG.info('Convicción mean_source=%s risk_aversion=%g weights=%s converged=%s gap=%s',
+             mean_source, risk_aversion, {s: round(w, 6) for s, w in output['weights'].items()},
+             info.get('converged'), output.get('gap'))
     output.update(mode='conviction', evidence='ventaja no demostrada',
                   mean_source=mean_source,
                   calibration_source='validation seleccionada; no es auditoría independiente de cartera',
@@ -122,7 +131,9 @@ def run_pipeline(data: Path, artifact_path: Path, output: Path, client: AIClient
     # > Se conserva la inferencia aunque falle el servicio explicativo.
     report['ai_status'] = 'pending'
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
+    LOG.info('Informe provisional output=%s ai_status=pending', output.name)
     report['analysis'] = asdict(client.analyze(AnalysisRequest(**report['summary'])))
     report['ai_status'] = 'completed'
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
+    LOG.info('Informe final output=%s ai_status=completed', output.name)
     return report

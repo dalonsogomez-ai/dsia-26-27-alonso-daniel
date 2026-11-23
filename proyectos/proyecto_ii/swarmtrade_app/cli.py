@@ -15,11 +15,14 @@ from .data import DataError, generate_demo
 from .paper import PaperError
 
 ROOT = Path(__file__).resolve().parents[1]
+LOG = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(ROOT / '.env', override=False)
     parser = argparse.ArgumentParser(description='-> SwarmTrader × DSIA: datos, sklearn y API HF')
+    parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                        help='Nivel de los logs por etapa en stderr (antes del subcomando)')
     commands = parser.add_subparsers(dest='command', required=True)
     inspect = commands.add_parser('inspect', help='Perfil y EDA sin entrenar modelos')
     inspect.add_argument('--data', type=Path, required=True)
@@ -61,9 +64,12 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument('--provider', choices=['mock', 'hf'], default=os.getenv('AI_PROVIDER', 'mock'))
     analyze.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+    logging.basicConfig(level=args.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    logging.getLogger().setLevel(args.log_level)
+    # > matplotlib publica avisos de unidades categóricas a INFO que no aportan a la traza del pipeline.
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
     try:
-        logging.info('Inicio command=%s', args.command)
+        LOG.info('Inicio command=%s', args.command)
         if args.command == 'inspect':
             from .inspection import inspect_dataset
             result = inspect_dataset(args.data, args.output)
@@ -105,9 +111,9 @@ def main(argv: list[str] | None = None) -> int:
                 request = AnalysisRequest(**json.loads(args.summary.read_text()))
                 result = asdict(client.analyze(request))
         print(json.dumps(result, indent=2, default=str, ensure_ascii=False, allow_nan=False))
-        logging.info('Fin command=%s', args.command)
+        LOG.info('Fin command=%s', args.command)
         return 0
     except (AIClientError, PaperError, DataError, ValueError, OSError, TypeError, KeyError, RuntimeError) as exc:
         # > Las excepciones externas del SDK se redactan en el borde AIClient.
-        logging.error('%s', str(exc))
+        LOG.error('%s', str(exc))
         return 2

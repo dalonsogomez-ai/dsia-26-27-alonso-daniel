@@ -26,7 +26,7 @@ python -m pytest -q --cov=swarmtrade_app --cov-report=term-missing
 
 > No se sobrescriben datos, runs, modelos ni informes. Para otro experimento, usa nombres nuevos. `evaluate` rechaza una segunda evaluación del holdout. Repetir el mismo dataset con otra carpeta no lo convierte en un test nuevo: el flujo prohíbe utilizar sus resultados para afinar candidatos. `--prepared` permite continuar una preparación existente sin volver a dividir/congelar datos.
 
-> Los logs van a stderr; el resultado JSON va a stdout y los informes al destino explícito. La CLI devuelve 0 en ejecución técnica correcta y 2 ante errores controlados. Una asignación con ventaja no demostrada no se convierte por ello en error técnico.
+> Los logs van a stderr; el resultado JSON va a stdout y los informes al destino explícito. Cada etapa registra a INFO con su logger de módulo: carga (filas, símbolos, rango de fechas), preparación (tamaños del split y filas purgadas), inferencia (`as_of`, prefijo del sha256 del artefacto, media predicha), convicción (pesos, convergencia y brecha) e IA (proveedor, modelo, latencia y `ai_status`; nunca el token). `--log-level` va antes del subcomando, por ejemplo `python -m swarmtrade_app --log-level WARNING run ...`; matplotlib queda en WARNING. La CLI devuelve 0 en ejecución técnica correcta y 2 ante errores controlados. Una asignación con ventaja no demostrada no se convierte por ello en error técnico.
 
 ## > Datos, problema y evaluación
 
