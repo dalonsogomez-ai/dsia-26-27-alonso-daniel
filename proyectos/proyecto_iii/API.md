@@ -5,9 +5,17 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 | Método | Ruta | Resultado |
 | --- | --- | --- |
 | GET | / | Dashboard. Carga el informe con una petición a la API |
-| GET | /health | 200 con `status=ready`, `run_id` y `as_of`, o 503 con `status=unavailable` |
+| GET | /health | 200 con `status=ready`, `run_id`, `as_of` y `checks`, o 503 con `status=unavailable` y `checks` |
 | GET | /api/v1/snapshot | 200 con procedencia, métricas, predicciones y explicación, o 503 con error tipado |
 | GET | /api/v1/snapshot/schema | 200 con JSON Schema del documento |
+
+## Salud
+
+`checks` contiene `snapshot_loaded`, `data_kind`, `as_of`, `snapshot_age_days` (días naturales UTC desde `generated_at`) y `journal_available` (el JSONL de `DSIA_JOURNAL` existe y se puede leer). Ninguna respuesta incluye rutas del disco. El journal es informativo: su ausencia no cambia `status`.
+
+## Errores
+
+Los errores comparten la forma `{"error": "<código>", "detail": {"code": "<código>", "message": "…"}, "request_id": "…"}`. `detail` se mantiene por compatibilidad con la RC1.
 
 ## Cabeceras y trazabilidad
 
