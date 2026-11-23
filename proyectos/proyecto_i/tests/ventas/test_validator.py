@@ -31,13 +31,62 @@ def test_numeric_boundaries(sales_frame, column, value, expected):
         assert column in invalid.iloc[0]["motivo"]
 
 
-@pytest.mark.parametrize("units, price", [(1e308, 1e308), (1e-300, 1e-300)])
-def test_unrepresentable_amount_is_rejected(sales_frame, units, price):
+@pytest.mark.parametrize("units, price, reason", [
+    (1e308, 1e308, "importe inválido"),
+    # => Con unidades enteras el subdesbordamiento del importe ya no es alcanzable:
+    # 1e-300 unidades se rechaza antes por no ser un número entero.
+    (1e-300, 1e-300, "unidades inválidas"),
+])
+def test_unrepresentable_amount_is_rejected(sales_frame, units, price, reason):
     frame = sales_frame.iloc[:1].copy().astype({"unidades": float, "precio_unitario": float})
     frame.loc[0, ["unidades", "precio_unitario"]] = [units, price]
     valid, invalid = validate_sales(frame)
     assert valid.empty
-    assert invalid.iloc[0]["motivo"] == "importe inválido"
+    assert invalid.iloc[0]["motivo"] == reason
+
+
+@pytest.mark.parametrize("value, expected", [(1.5, 0), (0.999, 0), ("2.5", 0), (2.0, 1), ("3", 1)])
+def test_units_must_be_whole_numbers(sales_frame, value, expected):
+    frame = sales_frame.iloc[:1].copy().astype({"unidades": "object"})
+    frame.loc[0, "unidades"] = value
+    valid, invalid = validate_sales(frame)
+    assert len(valid) == expected
+    if not expected:
+        assert invalid.iloc[0]["motivo"] == "unidades inválidas"
+
+
+@pytest.mark.parametrize("column", ["region", "producto", "cliente_id"])
+@pytest.mark.parametrize("value, expected", [(None, 0), ("", 0), ("   ", 0), ("\t", 0), (" X ", 1)])
+def test_categorical_columns_must_not_be_blank(sales_frame, column, value, expected):
+    frame = sales_frame.iloc[:1].copy().astype({column: "object"})
+    frame.loc[0, column] = value
+    valid, invalid = validate_sales(frame)
+    assert len(valid) == expected
+    if not expected:
+        assert invalid.iloc[0]["motivo"] == f"{column} vacío"
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("2026-01-09", 1), ("2024-02-29", 1), ("2026-02-30", 0), ("2026-13-01", 0),
+    ("2026-1-9", 0), ("09/01/2026", 0), ("", 0), (None, 0), ("2026-01-09T10:00", 0),
+])
+def test_optional_date_must_be_iso(sales_frame, value, expected):
+    frame = sales_frame.iloc[:1].copy()
+    frame.insert(0, "fecha", pd.Series([value], dtype="object"))
+    valid, invalid = validate_sales(frame)
+    assert len(valid) == expected
+    if not expected:
+        assert invalid.iloc[0]["motivo"] == "fecha inválida"
+
+
+def test_invalid_rows_keep_original_values_and_all_reasons(sales_frame):
+    frame = sales_frame.astype({"unidades": "object"})
+    frame.loc[1, ["unidades", "region"]] = ["na", " "]
+    valid, invalid = validate_sales(frame)
+    assert len(valid) == 2
+    assert invalid.iloc[0]["unidades"] == "na"
+    assert invalid.iloc[0]["region"] == " "
+    assert invalid.iloc[0]["motivo"] == "unidades inválidas; region vacío"
 
 
 def test_missing_columns(sales_frame):
@@ -57,3 +106,5 @@ def test_course_csv_has_140_valid_and_10_invalid():
     valid, invalid = validate_sales(load(source))
     assert len(valid) == 140
     assert len(invalid) == 10
+    # >> La fila con unidades='na' conserva su valor original en los rechazos.
+    assert invalid["unidades"].isin(["na"]).sum() == 1

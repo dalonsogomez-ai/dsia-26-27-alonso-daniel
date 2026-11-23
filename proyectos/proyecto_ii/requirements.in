@@ -1,4 +1,5 @@
-# -> Entorno de Proyecto II; requirements.txt fija las versiones comprobadas.
+# -> Entorno compartido de los Proyectos II y III; requirements.txt fija las versiones comprobadas.
+# > pandas<3: el Proyecto I usa pandas 3 en otro entorno (.venv-i); no se instalan juntos.
 numpy>=1.26,<3
 pandas>=2.2,<3
 scipy>=1.11,<2
@@ -11,3 +12,10 @@ marimo>=0.10,<1
 pytest>=8,<10
 pytest-cov>=6,<8
 alpaca-py>=0.43,<1
+# > Dependencias directas del Proyecto III (API, servidor y cliente de pruebas de Starlette).
+starlette>=1,<2
+uvicorn>=0.30,<1
+pydantic>=2.7,<3
+httpx>=0.27,<1
+# > starlette.testclient recomienda httpx2 y avisa de deprecación si solo encuentra httpx.
+httpx2>=2.9,<3

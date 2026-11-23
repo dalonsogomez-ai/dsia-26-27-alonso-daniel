@@ -29,8 +29,26 @@ def test_jsonl_normalizes_api_fields(tmp_path, bars_frame, suffix):
 
 @pytest.mark.parametrize("suffix", ["csv", "jsonl", "jsonl.gz"])
 def test_missing_file_is_domain_error(tmp_path, suffix):
-    with pytest.raises(DataLoadError):
+    with pytest.raises(DataLoadError, match="No existe el fichero"):
         load(tmp_path / f"missing.{suffix}")
+
+
+@pytest.mark.parametrize("suffix", ["csv", "jsonl"])
+def test_directory_is_not_a_file(tmp_path, suffix):
+    folder = tmp_path / f"carpeta.{suffix}"
+    folder.mkdir()
+    with pytest.raises(DataLoadError, match="No existe el fichero"):
+        load(folder)
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_jsonl_ignores_blank_lines(tmp_path, bars_frame, compressed):
+    path = tmp_path / ("bars.jsonl.gz" if compressed else "bars.jsonl")
+    lines = [json.dumps(record) for record in bars_frame.to_dict("records")]
+    opener = gzip.open if compressed else open
+    with opener(path, "wt", encoding="utf-8") as sink:
+        sink.write("\n" + "\n\n".join(lines) + "\n   \n")
+    pd.testing.assert_frame_equal(load(path), bars_frame, check_dtype=False)
 
 
 @pytest.mark.parametrize("content", ["{\n", "[]\n", '{"t":"x","timestamp":"y"}\n'])

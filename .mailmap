@@ -1,0 +1,5 @@
+# -> Unificar los alias del autor en una sola identidad (git shortlog, git log --use-mailmap, blame).
+# >> No reescribe el historial: solo cambia cómo se muestra.
+Daniel Alonso Gómez <daniel@dalonsogomez.dev>
+Daniel Alonso Gómez <daniel@dalonsogomez.dev> Daniel Alonso Gomez <daniel@dalonsogomez.dev>
+Daniel Alonso Gómez <daniel@dalonsogomez.dev> <ai@dalonsogomez.com>

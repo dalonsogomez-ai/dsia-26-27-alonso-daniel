@@ -1,3 +1,7 @@
 # -> Instalar el entorno compartido de las prácticas y del Proyecto I.
 # >> Las versiones directas se mantienen en la carpeta de la entrega.
+# ~> Solo instala el Proyecto I y las prácticas de los Temas 1 y 2 (entorno .venv-i, pandas 3).
+# ~> Los Proyectos II y III usan otro entorno (.venv-ii, pandas 2), incompatible con este:
+#      pip install -r proyectos/proyecto_ii/requirements.txt
+#      (o proyectos/proyecto_iii/requirements-e2e.txt para añadir Playwright).
 -r proyectos/proyecto_i/requirements.txt

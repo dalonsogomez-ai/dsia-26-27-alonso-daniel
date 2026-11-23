@@ -8,16 +8,6 @@ from dsia_web.build import main, write_snapshot
 from dsia_web.snapshot import read_snapshot
 
 
-@pytest.fixture(scope="module")
-def report(tmp_path_factory):
-    root = tmp_path_factory.mktemp("flow")
-    path = root / "snapshot.json"
-    journal = root / "pipeline.jsonl"
-    assert main(["demo", "--work", str(root / "work"), "--output", str(path),
-                 "--journal", str(journal)]) == 0
-    return path, read_snapshot(path)
-
-
 def test_pipeline_backend_and_dashboard(report):
     path, snapshot = report
     with TestClient(create_app(path)) as client:
@@ -36,6 +26,19 @@ def test_pipeline_backend_and_dashboard(report):
         assert "run_id" in client.get("/api/v1/snapshot/schema").json()["required"]
         assert client.get("/").status_code == 200
         assert 'fetch("/api/v1/snapshot"' in client.get("/static/dashboard.js").text
+
+
+def test_dashboard_consumes_operation_and_analysis_endpoints_without_inline_code(report):
+    with TestClient(create_app(report[0])) as client:
+        script = client.get("/static/dashboard.js").text
+        page = client.get("/").text
+    for endpoint in ('"/health"', '"/api/v1/metrics"', '"/api/v1/pipeline?limit=12"', '"/api/v1/analyze"'):
+        assert endpoint in script
+    for anchor in ('id="ops"', 'id="ops-events"', 'id="inputs"', 'id="analyze-form"', 'role="alert"'):
+        assert anchor in page
+    # > La CSP default-src 'self' bloquearía cualquier script, estilo o manejador inline.
+    assert "<script>" not in page and "<style" not in page and " style=" not in page
+    assert " on" + "click=" not in page and " on" + "submit=" not in page
 
 
 @pytest.mark.parametrize("contents", [None, "{invalid", "{}"])

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import tempfile
 from contextlib import contextmanager, nullcontext
@@ -14,13 +15,17 @@ from pathlib import Path
 from time import perf_counter_ns
 from typing import Iterator, TextIO
 
-from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest
-from swarmtrade_app.data import DataError, generate_demo
+import numpy as np
+import pandas as pd
+from swarmtrade_app.ai_client import AIClientError, AnalysisRequest
+from swarmtrade_app.data import DataError, file_sha256, generate_demo, load_bars
 from swarmtrade_app.pipeline import infer
 from swarmtrade_app.preparation import prepare
 from swarmtrade_app.training import evaluate_holdout, train_prepared
 
-from .snapshot import Explanation, Metrics, Period, Prediction, Snapshot, create_snapshot
+from .ai import client_from_env
+from .snapshot import (Explanation, InputSummary, Metrics, Period, Prediction, Snapshot,
+                       create_snapshot)
 
 LOG = logging.getLogger(__name__)
 
@@ -32,9 +37,11 @@ class RunJournal:
         self.stream = stream
 
     @contextmanager
-    def stage(self, stage: str, **fields: str) -> Iterator[None]:
+    def stage(self, stage: str, **fields: str) -> Iterator[dict]:
+        """Registrar inicio y resultado; lo que se añada al dict cedido viaja en el evento de éxito."""
+        details: dict = {}
         if self.stream is None:
-            yield
+            yield details
             return
 
         def emit(status: str, **details: str | float) -> None:
@@ -50,18 +57,43 @@ class RunJournal:
         emit("started")
         start = perf_counter_ns()
         try:
-            yield
+            yield details
         except Exception as error:
             emit("failed", duration_ms=(perf_counter_ns() - start) / 1e6,
                  error_type=type(error).__name__)
             raise
         else:
-            emit("succeeded", duration_ms=(perf_counter_ns() - start) / 1e6)
+            emit("succeeded", duration_ms=(perf_counter_ns() - start) / 1e6, **details)
+
+
+def validate_input(data: Path) -> dict:
+    """Validar el CSV con el contrato del II y devolver solo agregados (sin precios ni rutas)."""
+    bars = load_bars(data)
+    return {"rows": int(len(bars)), "symbols": int(bars["symbol"].nunique()),
+            "input_sha256": file_sha256(data)}
+
+
+def summarize_inputs(bars: pd.DataFrame, horizon: int = 21, window: int = 63) -> list[InputSummary]:
+    """Último cierre, retorno realizado a ``horizon`` sesiones y volatilidad anualizada por símbolo."""
+    summary = []
+    for symbol, group in bars.sort_values("date").groupby("symbol", sort=True):
+        closes = group["close"].to_numpy(dtype=float)
+        daily = closes[1:] / closes[:-1] - 1
+        recent = daily[-window:]
+        summary.append(InputSummary(
+            symbol=str(symbol), sessions=len(closes), last_close=float(closes[-1]),
+            return_21_sessions=float(closes[-1] / closes[-1 - horizon] - 1) if len(closes) > horizon else None,
+            volatility_annualized=float(np.std(recent, ddof=1) * math.sqrt(252)) if len(recent) > 1 else None,
+        ))
+    return summary
 
 
 def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
-    """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado."""
-    report, artifact, _ = infer(data, run / "model.joblib")
+    """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado.
+
+    El cliente de IA toma modelo, timeout y proveedor de inferencia del entorno (``HF_*``).
+    """
+    report, artifact, bars = infer(data, run / "model.joblib")
     validation = artifact["report"]
     holdout = json.loads((run / "test_metrics.json").read_text())
     summary = AnalysisRequest(**report["summary"])
@@ -70,7 +102,7 @@ def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
     if report["input_sha256"] != validation["metadata"]["data_sha256"]:
         raise DataError("La entrada no coincide con el dataset evaluado")
     try:
-        explanation = Explanation(**asdict(AIClient(provider=provider).analyze(summary)))
+        explanation = Explanation(**asdict(client_from_env(provider).analyze(summary)))
     except AIClientError:
         LOG.warning("Proveedor de explicación no disponible: %s", provider)
         explanation = None
@@ -93,6 +125,7 @@ def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
         }),
         "predictions": [Prediction.model_validate(row) for row in report["predictions"]],
         "explanation": explanation,
+        "input_summary": summarize_inputs(bars, horizon=summary.horizon),
     })
 
 
@@ -129,7 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     existing_parser = modes.add_parser("from-run")
     existing_parser.add_argument("--data", type=Path, required=True)
     existing_parser.add_argument("--run", type=Path, required=True)
-    existing_parser.add_argument("--provider", choices=("mock", "hf"), default="mock")
+    existing_parser.add_argument("--provider", choices=("mock", "hf"),
+                                 default=os.getenv("AI_PROVIDER", "mock"))
     for mode in (demo_parser, existing_parser):
         mode.add_argument("--output", type=Path, required=True)
         mode.add_argument("--journal", type=Path, help="Registro JSONL de etapas en un archivo nuevo")
@@ -155,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.mode == "demo":
                 snapshot = demo(args.work, journal)
             else:
+                with journal.stage("validate_input") as details:
+                    details.update(validate_input(args.data))
                 with journal.stage("infer_snapshot"):
                     snapshot = from_run(args.data, args.run, args.provider)
             with journal.stage("publish_snapshot", run_id=snapshot.run_id):

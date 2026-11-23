@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import logging
 from pathlib import Path
 
 import joblib
@@ -14,6 +15,8 @@ import pandas as pd
 
 from ml_pipeline import guard
 from .data import DataError, FEATURES, WARMUP, file_sha256, labelled_panel, load_bars
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,6 +85,9 @@ def prepare(data: Path, run: Path, *, horizon: int = 21, data_kind: str = 'local
               'Los tres bloques son cronológicos. target_end de train precede validation y el de validation precede test.',
               state_dir=ledger or run)
     plt.close(fig)
+    LOG.info('Split purgado train=%d validation=%d test=%d purged_train=%d purged_validation=%d horizon=%d',
+             *[len(frame) for frame in frames], metadata['purged_rows']['train'],
+             metadata['purged_rows']['validation'], horizon)
     result = Prepared(*frames, metadata)
     # > Un dict evita serializar una clase bajo __main__ al usar python -m.
     joblib.dump({'train': train, 'validation': validation, 'holdout': holdout,

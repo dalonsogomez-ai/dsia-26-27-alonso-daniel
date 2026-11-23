@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,7 @@ from ._vendor.features import FACTOR_NAMES, compute_features, forward_returns
 
 FEATURES = tuple(FACTOR_NAMES)
 WARMUP = 252
+LOG = logging.getLogger(__name__)
 
 
 class DataError(ValueError):
@@ -58,6 +60,8 @@ def load_bars(path: Path) -> pd.DataFrame:
             raise DataError('Relaciones OHLC incoherentes')
     if bars['symbol'].nunique() < 5:
         raise DataError('Se requieren cinco símbolos para los factores cross-sectional')
+    LOG.info('Barras cargadas file=%s rows=%d symbols=%d dates=%d start=%s end=%s', Path(path).name, len(bars),
+             bars['symbol'].nunique(), bars['date'].nunique(), bars['date'].min().date(), bars['date'].max().date())
     return bars.sort_values(['date', 'symbol']).reset_index(drop=True)
 
 
@@ -98,6 +102,8 @@ def generate_demo(path: Path, sessions: int = 900, symbols: int = 8, seed: int =
     dates = pd.bdate_range('2020-01-02', periods=sessions)
     market = rng.normal(0.0002, 0.009, (sessions, 1))
     prices = 100 * np.exp(np.cumsum(market + rng.normal(0, 0.012, (sessions, symbols)), axis=0))
+    # -> 6 decimales: np.exp difiere en el último ULP entre x86 y ARM; así el CSV es idéntico byte a byte.
+    prices = np.round(prices, 6)
     volume = rng.integers(100_000, 5_000_000, (sessions, symbols))
     frames = [pd.DataFrame({'date': dates, 'symbol': f'DEMO{i + 1:02}',
                            'close': prices[:, i], 'volume': volume[:, i]}) for i in range(symbols)]

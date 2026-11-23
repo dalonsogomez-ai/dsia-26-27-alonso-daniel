@@ -89,6 +89,13 @@ def test_test_set_frozen_and_only_once(trained):
                          metric_fn=lambda a, b: 0, state_dir=run, pipeline_md=run / 'PIPELINE.md')
     result = evaluate_holdout(run)
     assert result['touches'] == 1 and result['selected'] == report['selected']
+    assert json.loads((run / '.guard_state.json').read_text())['test_touches'] == 1
+    baseline = result['baseline']
+    assert baseline['model'] == 'dummy_mean_train'
+    assert baseline['prediction'] == pytest.approx(p.train['target'].mean())
+    expected = np.sqrt(np.mean((p.holdout['target'] - p.train['target'].mean()) ** 2))
+    assert baseline['rmse'] == pytest.approx(expected)
+    assert json.loads((run / 'test_metrics.json').read_text())['baseline'] == baseline
     with pytest.raises(guard.TestSetAlreadyUsed):
         evaluate_holdout(run)
 
@@ -162,6 +169,35 @@ def test_conviction_risk_neutral_uses_model_argmax(trained):
         assert row['mu'] == pytest.approx(expected)
 
 
+def test_significant_weights_drops_residuals_and_renormalizes():
+    from swarmtrade_app.pipeline import significant_weights
+    result = significant_weights([5.7e-08, 1.5e-09, 0.99999, 9.7e-06, -1e-12])
+    assert result[0] == result[1] == result[4] == 0
+    assert result.sum() == pytest.approx(1, abs=1e-15)
+    assert result[3] == pytest.approx(9.7e-06 / (0.99999 + 9.7e-06))
+    with pytest.raises(DataError, match='significativos'):
+        significant_weights([1e-9, 0.0])
+
+
+def test_model_allocation_has_no_residual_weights(trained, monkeypatch):
+    import dataclasses
+    from swarmtrade_app import pipeline
+    data, run, _, _ = trained
+    real = pipeline.solve_simplex
+    def with_residuals(*args, **kwargs):
+        # > Reproduce el residuo observado en la demo (p. ej. 1,5e-09) sobre la solución real.
+        sol = real(*args, **kwargs)
+        residual = np.where(sol.weights < 1e-6, 1.5e-9, sol.weights)
+        return dataclasses.replace(sol, weights=residual / residual.sum())
+    monkeypatch.setattr(pipeline, 'solve_simplex', with_residuals)
+    report, artifact, bars = infer(data, run / 'model.joblib')
+    result = conviction(report, artifact, bars, scenarios=100)
+    assert len(result['weights']) < 6
+    assert min(result['weights'].values()) >= 1e-6
+    assert sum(result['weights'].values()) == pytest.approx(1, abs=1e-12)
+    assert sum(row['weight'] for row in result['table']) == pytest.approx(1, abs=1e-12)
+
+
 def test_empirical_mode_keeps_upstream_small_universe_diagnostic(trained):
     data, run, _, _ = trained
     report, artifact, bars = infer(data, run / 'model.joblib')
@@ -169,6 +205,48 @@ def test_empirical_mode_keeps_upstream_small_universe_diagnostic(trained):
     assert result['info']['map_bins'] == 0
     assert result['mean_source'] == 'empirical'
     assert sum(result['weights'].values()) == pytest.approx(1)
+
+
+@pytest.mark.integration
+def test_stage_logs_for_load_inference_and_ai(trained, tmp_path, caplog, monkeypatch):
+    import logging
+    data, run, _, report = trained
+    monkeypatch.setenv('HF_TOKEN', 'token-que-no-debe-aparecer-en-logs')
+    caplog.set_level(logging.INFO)
+    run_pipeline(data, run / 'model.joblib', tmp_path / 'logged.json', AIClient(), scenarios=100)
+    by_logger = {record.name: record.getMessage() for record in caplog.records}
+    assert 'rows=3000 symbols=6' in by_logger['swarmtrade_app.data']
+    inference = next(r.getMessage() for r in caplog.records if r.getMessage().startswith('Inferencia'))
+    assert f"model={report['selected']}" in inference and 'artifact_sha256=' in inference
+    assert 'mean_prediction=' in inference and 'as_of=' in inference
+    assert any('converged=True' in r.getMessage() for r in caplog.records)
+    assert any('ai_status=completed' in r.getMessage() for r in caplog.records if r.name.endswith('ai_client'))
+    assert 'token-que-no-debe-aparecer-en-logs' not in caplog.text
+
+
+def test_hf_failure_log_names_error_type_without_secret(caplog, monkeypatch):
+    import logging
+    import huggingface_hub
+    from swarmtrade_app.ai_client import AnalysisRequest
+    class Broken:
+        def __init__(self, **kwargs):
+            raise TimeoutError('secreto-en-el-mensaje')
+    monkeypatch.setenv('HF_TOKEN', 'secreto-en-el-mensaje')
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', Broken)
+    caplog.set_level(logging.INFO)
+    with pytest.raises(AIClientError):
+        AIClient('hf').analyze(AnalysisRequest('2026-09-28', 'ridge', 21, 6, 0.01, 0.06, 'synthetic'))
+    assert 'error_type=TimeoutError' in caplog.text and 'ai_status=failed' in caplog.text
+    assert 'secreto-en-el-mensaje' not in caplog.text
+
+
+def test_cli_log_level_filters_stage_logs(bars_file, tmp_path, caplog):
+    import logging
+    from swarmtrade_app.cli import main
+    caplog.set_level(logging.INFO)  # > Restaura el nivel raíz al terminar el test.
+    assert main(['--log-level', 'WARNING', 'inspect', '--data', str(bars_file),
+                 '--output', str(tmp_path / 'insp')]) == 0
+    assert not [r for r in caplog.records if r.levelno < 30 and r.name.startswith(('swarmtrade_app', 'matplotlib'))]
 
 
 @pytest.mark.integration
@@ -180,3 +258,23 @@ def test_cli_training_inference_and_evaluation(bars_file, tmp_path, capsys):
     assert main(['run', '--data', str(bars_file), '--artifact', str(run / 'model.joblib'),
                  '--output', str(run / 'report.json'), '--scenarios', '100', '--provider', 'mock']) == 0
     assert json.loads((run / 'report.json').read_text())['summary']['data_kind'] == 'synthetic'
+
+
+def test_evaluate_without_model_is_a_domain_error(tmp_path):
+    # Arrange: un run sin model.joblib (no se ejecutó train).
+    run = tmp_path / "vacio"
+    run.mkdir()
+
+    # Act / Assert: error de dominio en español, no el OSError crudo.
+    with pytest.raises(DataError, match="ejecuta train antes de evaluate"):
+        evaluate_holdout(run)
+
+
+def test_cli_reports_second_holdout_touch_in_spanish(trained, caplog):
+    from swarmtrade_app.cli import main
+    _, run, _, _ = trained
+    assert main(["evaluate", "--run", str(run)]) == 0
+    caplog.clear()
+    assert main(["evaluate", "--run", str(run)]) == 2
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert messages == ["El holdout de este run ya se evaluó una vez; entrena un run nuevo para volver a evaluar"]

@@ -20,6 +20,8 @@ from .data import DataError, FEATURES
 from .models import SwarmRegressor, ridge_model
 from .preparation import load_prepared
 
+LOG = logging.getLogger(__name__)
+
 
 def metrics(y, prediction) -> dict[str, float]:
     return {'rmse': float(root_mean_squared_error(y, prediction)),
@@ -42,7 +44,7 @@ def train_prepared(run: Path, *, ledger: Path | None = None) -> dict:
         model.fit(X, y)
         predictions[name] = model.predict(validation.loc[:, FEATURES])
         scores[name] = metrics(validation['target'], predictions[name])
-        logging.info('Validation model=%s rmse=%.6f', name, scores[name]['rmse'])
+        LOG.info('Validation model=%s rmse=%.6f', name, scores[name]['rmse'])
     winner = min(scores, key=lambda name: scores[name]['rmse'])
     diagnostic = validation[['date', 'symbol', 'target_end', 'target']].copy()
     diagnostic['prediction'] = predictions[winner]
@@ -90,12 +92,18 @@ def train_prepared(run: Path, *, ledger: Path | None = None) -> dict:
 def evaluate_holdout(run: Path, *, ledger: Path | None = None) -> dict:
     """> Evaluar una sola vez el ganador congelado, sin selección posterior."""
     run = Path(run)
+    if not (run / 'model.joblib').is_file():
+        raise DataError(f'No existe model.joblib en {run.name}: ejecuta train antes de evaluate')
     artifact = joblib.load(run / 'model.joblib')
     prepared = load_prepared(run)
     result = {}
+    # > Referencia fija de train (DummyRegressor mean): no entra en la selección y comparte el único toque.
+    train_mean = float(prepared.train['target'].mean())
 
     def evaluate(y, prediction):
         result.update(metrics(y, prediction))
+        result['baseline'] = {'model': 'dummy_mean_train', 'prediction': train_mean,
+                              **metrics(y, np.full(len(y), train_mean))}
         return result['rmse']
 
     def predict(frame):
@@ -104,5 +112,7 @@ def evaluate_holdout(run: Path, *, ledger: Path | None = None) -> dict:
     guard.final_test(predict, prepared.holdout, target='target', metric_fn=evaluate,
                      state_dir=run, pipeline_md=(ledger or run) / 'PIPELINE.md')
     result.update(selected=artifact['report']['selected'], touches=1)
+    LOG.info('Holdout model=%s rmse=%.6f baseline_rmse=%.6f touches=1', result['selected'], result['rmse'],
+             result['baseline']['rmse'])
     (run / 'test_metrics.json').write_text(json.dumps(result, indent=2))
     return result

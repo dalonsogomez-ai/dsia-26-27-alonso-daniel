@@ -10,20 +10,44 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from ml_pipeline import guard
+
 from .ai_client import AIClient, AIClientError, AnalysisRequest
 from .data import DataError, generate_demo
 from .paper import PaperError
 
 ROOT = Path(__file__).resolve().parents[1]
+LOG = logging.getLogger(__name__)
+
+
+def provider_name(value: str) -> str:
+    """> Normaliza el proveedor como la demo de clase: 'huggingface' es alias de 'hf'."""
+    name = value.lower().strip()
+    return 'hf' if name == 'huggingface' else name
+
+
+def env_number(name: str, default: str, cast: type, low: float, high: float) -> float | int:
+    """> Lee un límite numérico del entorno con un error de dominio en lugar del de Python."""
+    raw = os.getenv(name, default).strip()
+    try:
+        value = cast(raw)
+    except ValueError:
+        value = None
+    if value is None or not low <= value <= high:
+        raise DataError(f'{name} debe ser un número entre {low:g} y {high:g}')
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(ROOT / '.env', override=False)
     parser = argparse.ArgumentParser(description='-> SwarmTrader × DSIA: datos, sklearn y API HF')
+    parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                        help='Nivel de los logs por etapa en stderr (antes del subcomando)')
     commands = parser.add_subparsers(dest='command', required=True)
     inspect = commands.add_parser('inspect', help='Perfil y EDA sin entrenar modelos')
     inspect.add_argument('--data', type=Path, required=True)
-    inspect.add_argument('--output', type=Path, default=ROOT / 'ml_pipeline')
+    inspect.add_argument('--output', type=Path, required=True,
+                         help='Directorio fuera del código, p. ej. runs/demo-inspection')
     demo = commands.add_parser('demo-data', help='CSV sintético reproducible, libre de datos Alpaca')
     demo.add_argument('--output', type=Path, required=True)
     demo.add_argument('--sessions', type=int, default=900)
@@ -46,7 +70,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument('--risk-aversion', type=float, default=1)
     run.add_argument('--scenarios', type=int, default=3000)
     run.add_argument('--mean-source', choices=['model', 'empirical'], default='model')
-    run.add_argument('--provider', choices=['mock', 'hf'], default=os.getenv('AI_PROVIDER', 'mock'))
+    run.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
+                     default=os.getenv('AI_PROVIDER', 'mock'), help='mock, hf o su alias huggingface')
     run.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
     plan = commands.add_parser('paper-plan', help='Consultar cuenta paper y guardar plan; no envía órdenes')
     plan.add_argument('--report', type=Path, required=True)
@@ -58,12 +83,16 @@ def main(argv: list[str] | None = None) -> int:
     execute.add_argument('--liquidate', action='store_true', help='Liquidar posiciones previas y esperar su cierre')
     analyze = commands.add_parser('analyze-summary', help='Explicar un resumen agregado tipado')
     analyze.add_argument('--summary', type=Path, required=True)
-    analyze.add_argument('--provider', choices=['mock', 'hf'], default=os.getenv('AI_PROVIDER', 'mock'))
+    analyze.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
+                         default=os.getenv('AI_PROVIDER', 'mock'), help='mock, hf o su alias huggingface')
     analyze.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+    logging.basicConfig(level=args.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    logging.getLogger().setLevel(args.log_level)
+    # > matplotlib publica avisos de unidades categóricas a INFO que no aportan a la traza del pipeline.
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
     try:
-        logging.info('Inicio command=%s', args.command)
+        LOG.info('Inicio command=%s', args.command)
         if args.command == 'inspect':
             from .inspection import inspect_dataset
             result = inspect_dataset(args.data, args.output)
@@ -94,9 +123,13 @@ def main(argv: list[str] | None = None) -> int:
                 result = broker.execute(json.loads(args.plan.read_text()), args.journal, liquidate=args.liquidate)
         else:
             from .pipeline import run_pipeline
-            client = AIClient(args.provider, args.model, timeout=float(os.getenv('HF_TIMEOUT', '30')),
-                              max_tokens=int(os.getenv('HF_MAX_TOKENS', '256')),
+            client = AIClient(args.provider, args.model, timeout=env_number('HF_TIMEOUT', '30', float, 1, 120),
+                              max_tokens=env_number('HF_MAX_TOKENS', '256', int, 1, 512),
                               inference_provider=os.getenv('HF_INFERENCE_PROVIDER', 'auto'))
+            if args.provider == 'hf' and not os.getenv('HF_TOKEN', '').strip():
+                # > Error de configuración: se detecta antes de inferir/optimizar. El informe `pending`
+                # queda para fallos del servicio HF una vez iniciada la llamada.
+                raise AIClientError('Falta HF_TOKEN en el entorno')
             if args.command == 'run':
                 result = run_pipeline(args.data, args.artifact, args.output, client, decision=args.decision,
                                       risk_aversion=args.risk_aversion, scenarios=args.scenarios,
@@ -105,9 +138,13 @@ def main(argv: list[str] | None = None) -> int:
                 request = AnalysisRequest(**json.loads(args.summary.read_text()))
                 result = asdict(client.analyze(request))
         print(json.dumps(result, indent=2, default=str, ensure_ascii=False, allow_nan=False))
-        logging.info('Fin command=%s', args.command)
+        LOG.info('Fin command=%s', args.command)
         return 0
+    except guard.TestSetAlreadyUsed:
+        # > El mensaje del guard vendorizado está pensado para un agente; aquí se traduce al usuario.
+        LOG.error('El holdout de este run ya se evaluó una vez; entrena un run nuevo para volver a evaluar')
+        return 2
     except (AIClientError, PaperError, DataError, ValueError, OSError, TypeError, KeyError, RuntimeError) as exc:
         # > Las excepciones externas del SDK se redactan en el borde AIClient.
-        logging.error('%s', str(exc))
+        LOG.error('%s', str(exc))
         return 2

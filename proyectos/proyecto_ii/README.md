@@ -6,13 +6,21 @@
 
 => Estado: implementación local y comprobaciones en [VERIFICACION.md](VERIFICACION.md). SwarmTrader sigue en investigación/backtesting; su auditoría G4 publicada da **NO ACCIONABLE**. Aquí se implementa la elección por convicción solicitada: elegir bajo incertidumbre no acredita ventaja. No hay trading real activado ni paper externo validado.
 
+## > Motivación
+
+> El problema es elegir hoy, con la información cerrada de la última sesión, una acción o combinación de acciones para mantener 21 sesiones, sabiendo que el retorno futuro es incierto y que la mayor parte de las señales de precio y volumen son débiles. Es una decisión repetida y con datos públicos diarios, lo que permite separar con rigor qué se sabía al decidir y qué se observa después.
+
+~> sklearn resuelve la parte medible: una **regresión** del retorno a 21 sesiones con factores causales, split temporal purgado y comparación contra un `DummyRegressor`. Hugging Face resuelve otra pieza distinta: convertir un resumen agregado (fecha, modelo, horizonte, media predicha y RMSE) en una **explicación en lenguaje natural** para quien lee el informe, sin decidir pesos ni ver datos crudos.
+
+> Hay continuidad con el Proyecto I: el contrato de barras diarias (`date`/`timestamp`, `symbol`, `close`, `volume`) es el que produce su extracción de Alpaca, de modo que el histórico autorizado entra sin transformaciones nuevas. Para el E2E del Proyecto III, este núcleo (datos → modelo persistido → inferencia → explicación) es el que el lote del III ejecuta y la API y el dashboard publican; por eso se aísla en módulos importables y no en la CLI.
+
 ## > Reproducir sin claves ni datos de terceros
 
-Desde esta carpeta, Python **3.12** y un entorno propio del Proyecto II:
+Desde esta carpeta, con Python **3.12**. El entorno `.venv-ii` vive en la raíz del repositorio y lo **comparten el II y el III**; el Proyecto I usa otro (`.venv-i`) porque fija pandas 3 y este requiere pandas 2 (`pandas<3`). No instales ambos `requirements.txt` en el mismo entorno.
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
+python3.12 -m venv ../../.venv-ii
+source ../../.venv-ii/bin/activate
 python -m pip install -r requirements.txt
 python -m swarmtrade_app demo-data --output data/demo.csv --sessions 680 --symbols 8 --seed 42
 python -m swarmtrade_app inspect --data data/demo.csv --output runs/demo-inspection
@@ -24,9 +32,9 @@ python -m pytest -q --cov=swarmtrade_app --cov-report=term-missing
 
 >> La demo genera datos propios, no requiere Internet después de instalar dependencias y no lleva señal artificial diseñada para asegurar éxito. Los tests bloquean sockets y entrenan modelos pequeños sobre fixtures sintéticos. Un resultado de demo no demuestra desempeño financiero.
 
-> No se sobrescriben datos, runs, modelos ni informes. Para otro experimento, usa nombres nuevos. `evaluate` rechaza una segunda evaluación del holdout. Repetir el mismo dataset con otra carpeta no lo convierte en un test nuevo: el flujo prohíbe utilizar sus resultados para afinar candidatos. `--prepared` permite continuar una preparación existente sin volver a dividir/congelar datos.
+> No se sobrescriben datos, runs, modelos ni informes. Para otro experimento, usa nombres nuevos. `evaluate` rechaza una segunda evaluación del holdout. Repetir el mismo dataset con otra carpeta no lo convierte en un test nuevo: el flujo prohíbe utilizar sus resultados para afinar candidatos. `--prepared` permite continuar una preparación existente sin volver a dividir/congelar datos. `inspect` exige `--output` para que perfiles y figuras no se escriban junto al código de `ml_pipeline/`.
 
-> Los logs van a stderr; el resultado JSON va a stdout y los informes al destino explícito. La CLI devuelve 0 en ejecución técnica correcta y 2 ante errores controlados. Una asignación con ventaja no demostrada no se convierte por ello en error técnico.
+> Los logs van a stderr; el resultado JSON va a stdout y los informes al destino explícito. Cada etapa registra a INFO con su logger de módulo: carga (filas, símbolos, rango de fechas), preparación (tamaños del split y filas purgadas), inferencia (`as_of`, prefijo del sha256 del artefacto, media predicha), convicción (pesos, convergencia y brecha) e IA (proveedor, modelo, latencia y `ai_status`; nunca el token). `--log-level` va antes del subcomando, por ejemplo `python -m swarmtrade_app --log-level WARNING run ...`; matplotlib queda en WARNING. La CLI devuelve 0 en ejecución técnica correcta y 2 ante errores controlados. Una asignación con ventaja no demostrada no se convierte por ello en error técnico.
 
 ## > Datos, problema y evaluación
 
@@ -36,7 +44,7 @@ El [contrato aprobado](PROBLEMA.md) define `target=close[t+21]/close[t]-1`. Los 
 
 Se reservan 60/20/20 de fechas completas y se purgan etiquetas que cruzan fronteras. StandardScaler se ajusta solo en train dentro del Pipeline sklearn. Candidatos prefijados, alpha=10: DummyRegressor(mean), Ridge global y media de cinco Ridge especialistas (momentum, reversal, lowrisk, liquidity, seasonal). Se selecciona menor **RMSE validation**, con desempate estable a favor del modelo sencillo. No hay búsqueda de hiperparámetros ni selección por test. MAE, R² y acierto de signo completan el informe; retornos solapados no se tratan como observaciones independientes para inferencia estadística.
 
-La ejecución sintética de referencia usa 680 sesiones, 8 símbolos y semilla 42. En validación, Ridge obtuvo RMSE 0,064383 frente a 0,065762 de Dummy y 0,065318 de Swarm. El holdout congelado de Ridge obtuvo RMSE 0,070995, MAE 0,055318 y R² −0,254941. Se genera con `dsia_web.build demo`, descrito en el Proyecto III. Para el histórico, el formato de entrada y las restricciones se documentan en [datos](data/README.md). Carga artefactos joblib propios y de procedencia conocida.
+La ejecución sintética de referencia usa 680 sesiones, 8 símbolos y semilla 42; `data/demo.csv` debe tener sha256 `c0574a8505d4329a8db523513d2f9f7bdbbb1599dd7568e4866d3b5ae1abf4c2` (comprobado el 23/11/2026 en macOS arm64 y en Linux x86_64: los precios se redondean a 6 decimales para que el CSV sea idéntico entre arquitecturas). En validación, Ridge obtuvo RMSE 0,064383 frente a 0,065762 de Dummy y 0,065318 de Swarm. El holdout congelado de Ridge obtuvo RMSE 0,070995, MAE 0,055318 y R² −0,254941. En el mismo y único toque, `test_metrics.json` guarda como `baseline` la media de train (DummyRegressor): RMSE 0,066148, MAE 0,052328 y R² −0,089425. Ridge queda **peor que la referencia** en el holdout; el baseline no interviene en la selección y no se reentrena nada por ello. La receta de este README reproduce exactamente estas cifras; `dsia_web.build demo` del Proyecto III ejecuta el mismo flujo y las publica en su snapshot. Para el histórico, el formato de entrada y las restricciones se documentan en [datos](data/README.md). Carga artefactos joblib propios y de procedencia conocida.
 
 Los notebooks marimo leen el CSV sintético y el run generados por la receta anterior. Puedes seleccionar otro CSV con `DSIA_DATA_PATH`, otro directorio de EDA con `DSIA_EDA_DIR` y otra ejecución con `DSIA_RUN_DIR`. Abre los notebooks desde la carpeta del Proyecto II, por ejemplo con `marimo edit ml_pipeline/02_prep.py`.
 
@@ -65,7 +73,7 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 ## > Hugging Face: una pieza diferente de sklearn
 
-Se sigue el estilo del ejemplo de clase `ai_api_client.py`: dataclasses de entrada/salida, `AIClientError` y proveedores `mock`/`hf`. HF realiza **chat_completion**, modelo [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct). Explica un resumen agregado después de inferir; no decide carteras ni envía órdenes. [AI_USAGE.md](AI_USAGE.md) documenta proveedor, tarea, modelo, costes acotados y aportaciones de IA.
+Se sigue el estilo del ejemplo de clase `ai_api_client.py`: dataclasses de entrada/salida, `AIClientError` y proveedores `mock`/`hf`. HF realiza **chat_completion**, modelo [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct). Explica un resumen agregado después de inferir; no decide carteras ni envía órdenes. Según el Hub el 23/11/2026, Qwen2.5-7B-Instruct tiene un único Inference Provider vivo, **featherless-ai**, que es el que resuelve hoy `HF_INFERENCE_PROVIDER=auto`. Si deja de estar disponible, `HF_MODEL=Qwen/Qwen3-8B` es una alternativa con la misma tarea conversacional, licencia Apache-2.0, sin acceso restringido y servida también por featherless-ai en esa fecha. Ninguna de las dos rutas se ha probado aquí con una llamada autenticada. [AI_USAGE.md](AI_USAGE.md) documenta proveedor, tarea, modelo, costes acotados y aportaciones de IA.
 
 ```bash
 cp .env.example .env
@@ -73,7 +81,7 @@ cp .env.example .env
 python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.joblib --output runs/demo/hf.json --provider hf
 ```
 
-> El cliente usa InferenceClient, timeout 30 s y máximo 256 tokens de salida por defecto, sin reintentos de aplicación. Disponibilidad, autorización y saldo dependen del proveedor actual. Si falta HF_TOKEN, devuelve error claro; si falla HF, conserva el informe con predicciones y `ai_status=pending`, sin simular respuesta real. No carga credenciales del Proyecto I. En tests/CI siempre mock/dobles, sin Internet ni gasto.
+> El cliente usa InferenceClient, timeout 30 s y máximo 256 tokens de salida por defecto, sin reintentos de aplicación. `HF_TIMEOUT` (1–120 s) y `HF_MAX_TOKENS` (1–512) se validan con un error de dominio, por ejemplo `HF_TIMEOUT debe ser un número entre 1 y 120`. `--provider` y `AI_PROVIDER` aceptan `huggingface` como alias de `hf`, sin distinguir mayúsculas. Disponibilidad, autorización y saldo dependen del proveedor actual. Si falta HF_TOKEN, la CLI lo detecta antes de cargar datos e inferir y no escribe informe: es un error de configuración. Si el token existe y falla el servicio HF, conserva el informe con predicciones y `ai_status=pending`, sin simular respuesta real. No carga credenciales del Proyecto I. En tests/CI siempre mock/dobles, sin Internet ni gasto.
 
 ## > Alpaca paper: plan y envío separados
 

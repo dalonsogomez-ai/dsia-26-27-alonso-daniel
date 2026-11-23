@@ -1,0 +1,22 @@
+# Blueprint de Render para el Proyecto III. Refleja el servicio desplegado en
+# https://dsia-swarmtrader.onrender.com (Docker, región Frankfurt, plan free).
+# Usa la misma imagen que el job proyecto-iii-docker del CI: el snapshot demo se genera en el build.
+services:
+  - type: web
+    name: dsia-swarmtrader
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./proyectos/proyecto_iii/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      # Render inyecta PORT; el CMD del Dockerfile escucha en ${PORT:-8000}.
+      - key: AI_PROVIDER
+        value: mock
+      # Opcionales y secretos: se introducen en el panel de Render, nunca en el repositorio.
+      - key: DSIA_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false

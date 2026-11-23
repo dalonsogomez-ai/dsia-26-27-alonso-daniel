@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 
+
+LOGGER = logging.getLogger(__name__)
 
 PRICES = ("open", "high", "low", "close", "vwap")
 COUNTS = ("volume", "trade_count")
@@ -19,11 +23,14 @@ def validate_bars(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     Se rechazan todos los miembros de una clave duplicada (symbol, timestamp),
     evitando escoger de forma arbitraria entre observaciones contradictorias.
+    Las válidas salen normalizadas (símbolo en mayúsculas, fecha UTC, números);
+    las inválidas conservan los valores originales y añaden `motivo`.
     """
     missing = REQUIRED_COLUMNS.difference(frame.columns)
     if missing:
         raise ValidationError(f"Faltan columnas obligatorias: {', '.join(sorted(missing))}")
-    bars = frame.copy().reset_index(drop=True)
+    original = frame.reset_index(drop=True)
+    bars = original.copy()
     bars["symbol"] = bars["symbol"].astype("string").str.strip().str.upper()
     bars["timestamp"] = pd.to_datetime(bars["timestamp"], format="ISO8601", utc=True, errors="coerce")
     for column in (*PRICES, *COUNTS):
@@ -43,12 +50,36 @@ def validate_bars(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         & bars["high"].ge(bars["low"]) & bars["low"].le(bars["open"])
         & bars["low"].le(bars["close"])
     )
-    rules["símbolo y fecha duplicados"] = ~bars.duplicated(["symbol", "timestamp"], keep=False)
+    # -> Una fecha inválida (NaT) no forma clave: ya se rechaza por "fecha inválida".
+    rules["símbolo y fecha duplicados"] = (
+        ~bars.duplicated(["symbol", "timestamp"], keep=False) | bars["timestamp"].isna()
+    )
     checks = pd.DataFrame(rules, index=bars.index).fillna(False)
     mask = checks.all(axis=1)
+    _warn_vwap_outside_range(bars.loc[mask])
     valid = bars.loc[mask].sort_values(["symbol", "timestamp"]).reset_index(drop=True)
-    invalid = bars.loc[~mask].copy()
+    # => Los rechazos se exportan con los valores recibidos, no con los convertidos.
+    invalid = original.loc[~mask].copy()
     invalid["motivo"] = checks.loc[~mask].apply(
         lambda row: "; ".join(row.index[~row]), axis=1
     ) if len(invalid) else pd.Series(dtype="string")
     return valid, invalid.reset_index(drop=True)
+
+
+def vwap_outside_range(bars: pd.DataFrame) -> pd.Series:
+    """> Marca las barras cuyo vwap queda fuera de [low, high].
+
+    Es solo un aviso: el vwap diario de Alpaca puede incluir operaciones fuera
+    del horario regular, cuyos precios no siempre caen en el rango de la sesión.
+    """
+    return ~bars["vwap"].between(bars["low"], bars["high"])
+
+
+def _warn_vwap_outside_range(valid_bars: pd.DataFrame) -> None:
+    """> Registra un aviso con las barras válidas de vwap atípico, sin rechazarlas."""
+    outside = vwap_outside_range(valid_bars)
+    if outside.any():
+        LOGGER.warning(
+            "%s barras válidas con vwap fuera de [low, high] (se conservan; solo aviso): %s",
+            int(outside.sum()), ", ".join(sorted(valid_bars.loc[outside, "symbol"].unique())),
+        )

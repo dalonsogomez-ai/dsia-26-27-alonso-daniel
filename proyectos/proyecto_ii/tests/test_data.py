@@ -51,8 +51,47 @@ def test_reject_small_universe(bars_file):
         load_bars(bars_file)
 
 
+@pytest.mark.integration
+def test_cli_inspect_writes_profile_and_summary(bars_file, tmp_path, capsys):
+    import json
+    from swarmtrade_app.cli import main
+    output = tmp_path / 'inspection'
+    assert main(['inspect', '--data', str(bars_file), '--output', str(output)]) == 0
+    summary = json.loads((output / 'inspection_summary.json').read_text())
+    profile = json.loads((output / 'data_profile.json').read_text())
+    assert summary['raw_rows'] == 3000 and summary['symbols'] == 6 and summary['dates'] == 500
+    assert summary['duplicate_keys'] == 0 and summary['horizon'] == 21
+    # > Las 21 últimas sesiones de cada símbolo no tienen target observado.
+    assert summary['labelled_rows'] == 3000 - 21 * 6
+    assert summary['sha256'] == file_sha256(bars_file)
+    assert 'return_21_sessions' in json.dumps(profile)
+    assert json.loads(capsys.readouterr().out)['source_file'] == 'bars.csv'
+
+
+def test_inspect_requires_symbol_and_close(tmp_path):
+    from swarmtrade_app.inspection import inspect_dataset
+    path = tmp_path / 'bad.csv'
+    pd.DataFrame({'date': ['2026-01-02'], 'close': [1.0]}).to_csv(path, index=False)
+    with pytest.raises(ValueError, match='symbol y close'):
+        inspect_dataset(path, tmp_path / 'out')
+
+
+def test_cli_inspect_requires_explicit_output(bars_file):
+    from swarmtrade_app.cli import main
+    with pytest.raises(SystemExit):
+        main(['inspect', '--data', str(bars_file)])
+
+
 def test_reject_ohlc_mismatch(bars_file):
     frame = pd.read_csv(bars_file).assign(open=1, high=2, low=1)
     frame.to_csv(bars_file, index=False)
     with pytest.raises(DataError, match='OHLC'):
         load_bars(bars_file)
+
+
+def test_demo_prices_have_fixed_precision_for_cross_platform_bytes(tmp_path):
+    # Arrange/Act: np.exp puede diferir en el último ULP entre arquitecturas (SIMD de x86 y ARM).
+    path = generate_demo(tmp_path / "demo.csv", sessions=450, symbols=5, seed=42)
+    closes = pd.read_csv(path, dtype={"close": str})["close"]
+    # Assert: con 6 decimales como máximo el CSV es idéntico byte a byte en macOS y Linux.
+    assert closes.str.split(".").str[1].str.len().max() <= 6

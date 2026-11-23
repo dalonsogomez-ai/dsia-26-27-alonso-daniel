@@ -42,6 +42,26 @@ def test_sdk_contract_without_network(request_data, monkeypatch):
     assert 'symbol' not in calls['request']['messages'][-1]['content'].replace('n_symbols', '')
 
 
+def test_kwargs_match_real_inference_client_signature(request_data, monkeypatch):
+    # >> FakeClient(**kwargs) aceptaría cualquier argumento; se contrastan con la clase real del SDK.
+    import inspect
+    import huggingface_hub
+    real = huggingface_hub.InferenceClient
+    calls = {}
+    class Recorder:
+        def __init__(self, **kwargs):
+            calls['config'] = kwargs
+        def chat_completion(self, **kwargs):
+            calls['request'] = kwargs
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='ok'))])
+    monkeypatch.setenv('HF_TOKEN', 'test-token-not-a-real-credential')
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', Recorder)
+    AIClient('hf').analyze(request_data)
+    inspect.signature(real.__init__).bind(None, **calls['config'])
+    inspect.signature(real.chat_completion).bind(None, **calls['request'])
+    assert calls['config']['provider'] == 'auto'
+
+
 def test_provider_failure_is_redacted(request_data, monkeypatch):
     import huggingface_hub
     class BadClient:
@@ -58,6 +78,53 @@ def test_provider_failure_is_redacted(request_data, monkeypatch):
 def test_invalid_client_config(kwargs):
     with pytest.raises(AIClientError):
         AIClient(**kwargs)
+
+
+@pytest.mark.parametrize('alias', ['huggingface', ' HF ', 'HuggingFace'])
+def test_huggingface_alias_is_normalized(alias):
+    from swarmtrade_app.cli import provider_name
+    assert AIClient(alias).provider == 'hf'
+    assert provider_name(alias) == 'hf'
+    assert provider_name(' Mock ') == 'mock'
+
+
+@pytest.mark.parametrize('name,value,message', [
+    ('HF_TIMEOUT', 'abc', 'HF_TIMEOUT debe ser un número entre 1 y 120'),
+    ('HF_TIMEOUT', '0', 'HF_TIMEOUT debe ser un número entre 1 y 120'),
+    ('HF_TIMEOUT', 'nan', 'HF_TIMEOUT debe ser un número entre 1 y 120'),
+    ('HF_MAX_TOKENS', '12.5', 'HF_MAX_TOKENS debe ser un número entre 1 y 512'),
+    ('HF_MAX_TOKENS', '9999', 'HF_MAX_TOKENS debe ser un número entre 1 y 512')])
+def test_env_limits_have_domain_errors(monkeypatch, name, value, message):
+    from swarmtrade_app.cli import env_number
+    from swarmtrade_app.data import DataError
+    monkeypatch.setenv(name, value)
+    high, cast = (120, float) if name == 'HF_TIMEOUT' else (512, int)
+    with pytest.raises(DataError, match=message):
+        env_number(name, '30', cast, 1, high)
+
+
+def test_env_limits_defaults_and_valid_values(monkeypatch):
+    from swarmtrade_app.cli import env_number
+    assert env_number('HF_TIMEOUT', '30', float, 1, 120) == 30.0
+    monkeypatch.setenv('HF_MAX_TOKENS', ' 128 ')
+    assert env_number('HF_MAX_TOKENS', '256', int, 1, 512) == 128
+
+
+def test_cli_reports_invalid_timeout_clearly(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv('HF_TIMEOUT', 'abc')
+    summary = tmp_path / 'summary.json'
+    summary.write_text('{}')
+    assert main(['analyze-summary', '--summary', str(summary)]) == 2
+    assert 'HF_TIMEOUT debe ser un número entre 1 y 120' in caplog.text
+
+
+def test_cli_checks_token_before_heavy_work(tmp_path, caplog):
+    # >> Sin HF_TOKEN no se carga el CSV ni el artefacto: los paths ni siquiera existen.
+    output = tmp_path / 'hf.json'
+    assert main(['run', '--data', str(tmp_path / 'missing.csv'), '--artifact', str(tmp_path / 'missing.joblib'),
+                 '--output', str(output), '--provider', 'huggingface']) == 2
+    assert 'Falta HF_TOKEN' in caplog.text
+    assert not output.exists()
 
 
 @pytest.mark.integration

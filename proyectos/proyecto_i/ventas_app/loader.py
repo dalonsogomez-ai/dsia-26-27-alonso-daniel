@@ -24,9 +24,11 @@ class CsvSalesRepository:
     """-> Repositorio de ventas almacenadas en un fichero CSV."""
 
     def __init__(self, path: str | Path) -> None:
+        """> Guarda la ruta; el fichero no se abre hasta `load()`."""
         self._path = Path(path)
 
     def load(self) -> pd.DataFrame:
+        """> Lee el CSV; si no existe o no se puede interpretar lanza `DataLoadError`."""
         if not self._path.is_file():
             raise DataLoadError(f"No existe el fichero: {self._path}")
 
@@ -40,9 +42,11 @@ class JsonSalesRepository:
     """-> Repositorio de ventas en JSON con una lista de registros."""
 
     def __init__(self, path: str | Path) -> None:
+        """> Guarda la ruta; el fichero no se abre hasta `load()`."""
         self._path = Path(path)
 
     def load(self) -> pd.DataFrame:
+        """> Lee una lista JSON de objetos; cualquier otra forma lanza `DataLoadError`."""
         if not self._path.is_file():
             raise DataLoadError(f"No existe el fichero: {self._path}")
 

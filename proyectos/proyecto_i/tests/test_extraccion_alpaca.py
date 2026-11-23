@@ -222,3 +222,53 @@ def test_options_wait_for_catalog_but_stop_on_permission_error(tmp_path):
     assert next(source) is None
     denied["option_contracts"] = {"status": "forbidden"}
     assert list(source) == []
+
+
+@pytest.fixture
+def snapshot_script(monkeypatch):
+    """> Script de capturas con la CLI de Alpaca sustituida por un doble sin red."""
+    import descargar_alpaca_actual
+
+    calls = []
+    def fake_call(*parts):
+        calls.append(parts)
+        if parts[0] == "multi-snapshots":
+            symbols = parts[parts.index("--symbols") + 1].split(",")
+            return {symbol: {"latestTrade": {"p": 1.0}} for symbol in symbols}
+        return {"reference": parts[-1]}
+    monkeypatch.setattr(descargar_alpaca_actual, "call", fake_call)
+    monkeypatch.setattr(descargar_alpaca_actual.time, "sleep", lambda _: None)
+    return descargar_alpaca_actual, calls
+
+
+def test_snapshot_help_does_not_run_anything(tmp_path, snapshot_script, capsys):
+    module, calls = snapshot_script
+    with pytest.raises(SystemExit) as stop:
+        module.main(["--help", "--raw", str(tmp_path)])
+    assert stop.value.code == 0
+    assert "--raw" in capsys.readouterr().out
+    assert calls == [] and list(tmp_path.iterdir()) == []
+
+
+def test_snapshot_without_assets_catalog_fails_before_creating_folders(tmp_path, snapshot_script, capsys):
+    module, calls = snapshot_script
+    assert module.main(["--raw", str(tmp_path)]) == 1
+    assert "alpaca_activos.json" in capsys.readouterr().err
+    assert calls == [] and list(tmp_path.iterdir()) == []
+
+
+def test_snapshot_filters_assets_and_writes_summary(tmp_path, snapshot_script):
+    module, calls = snapshot_script
+    assets = [
+        {"symbol": "AAA", "class": "us_equity", "status": "active", "exchange": "NYSE"},
+        {"symbol": "BBB", "class": "us_equity", "status": "inactive", "exchange": "NYSE"},
+        {"symbol": "CCC", "class": "us_equity", "status": "active", "exchange": "OTC"},
+        {"symbol": "ddd", "class": "us_equity", "status": "active", "exchange": "NYSE"},
+    ]
+    (tmp_path / "alpaca_activos.json").write_text(json.dumps(assets), encoding="utf-8")
+    assert module.main(["--raw", str(tmp_path)]) == 0
+    out = tmp_path / "masivo" / "estado_actual"
+    summary = json.loads((out / "resumen.json").read_text(encoding="utf-8"))
+    assert summary["requested_symbols"] == 1 and summary["returned_snapshots"] == 1
+    assert calls[0][:3] == ("multi-snapshots", "--symbols", "AAA")
+    assert json.loads((out / "fallos.json").read_text(encoding="utf-8")) == []

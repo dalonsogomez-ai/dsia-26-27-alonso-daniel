@@ -14,6 +14,15 @@ def block_network(monkeypatch):
     monkeypatch.setattr(socket, 'create_connection', forbidden)
 
 
+@pytest.fixture(autouse=True)
+def isolate_local_env(monkeypatch):
+    # >> Un .env local del desarrollador no debe cambiar proveedor, token ni límites durante la suite.
+    monkeypatch.setattr('swarmtrade_app.cli.load_dotenv', lambda *args, **kwargs: None)
+    monkeypatch.setenv('AI_PROVIDER', 'mock')
+    for name in ('HF_TOKEN', 'HF_MODEL', 'HF_INFERENCE_PROVIDER', 'HF_TIMEOUT', 'HF_MAX_TOKENS'):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def bars_file(tmp_path):
     return generate_demo(tmp_path / 'bars.csv', sessions=500, symbols=6, seed=17)

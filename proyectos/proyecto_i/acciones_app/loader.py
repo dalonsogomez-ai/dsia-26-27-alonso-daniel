@@ -29,10 +29,13 @@ class CsvBarsRepository:
     """-> Lee el CSV tabular producido por descargar_alpaca.py."""
 
     def __init__(self, path: str | Path) -> None:
+        """> Guarda la ruta; el fichero no se abre hasta `load()`."""
         self._path = Path(path)
 
     def load(self) -> pd.DataFrame:
         """> Carga el CSV o traduce el error de lectura a una excepción de dominio."""
+        if not self._path.is_file():
+            raise DataLoadError(f"No existe el fichero: {self._path}")
         try:
             return pd.read_csv(self._path)
         except (OSError, UnicodeError, pd.errors.ParserError, pd.errors.EmptyDataError) as error:
@@ -43,15 +46,23 @@ class JsonlBarsRepository:
     """-> Lee un lote JSONL de Alpaca, opcionalmente comprimido con gzip."""
 
     def __init__(self, path: str | Path) -> None:
+        """> Guarda la ruta; el fichero no se abre hasta `load()`."""
         self._path = Path(path)
 
     def load(self) -> pd.DataFrame:
-        """> Normaliza los nombres de campos compactos de la API al esquema CSV."""
+        """> Normaliza los nombres de campos compactos de la API al esquema CSV.
+
+        Las líneas en blanco (por ejemplo, el salto final de un lote) se ignoran.
+        """
+        if not self._path.is_file():
+            raise DataLoadError(f"No existe el fichero: {self._path}")
         opener = gzip.open if self._path.suffix.lower() == ".gz" else open
         records = []
         try:
             with opener(self._path, "rt", encoding="utf-8") as source:
                 for number, line in enumerate(source, 1):
+                    if not line.strip():
+                        continue
                     record = json.loads(line)
                     if not isinstance(record, dict):
                         raise DataLoadError(f"La línea {number} debe ser un objeto JSON.")
