@@ -11,9 +11,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# > Dependencias fijadas del II en una capa propia para reutilizar la caché entre builds.
-COPY proyectos/proyecto_ii/requirements.txt proyectos/proyecto_ii/requirements.txt
-RUN python -m pip install --no-cache-dir -r proyectos/proyecto_ii/requirements.txt
+# > Solo las dependencias de ejecución, con las mismas versiones fijadas del II (sin marimo, pytest ni alpaca-py),
+#   en una capa propia para reutilizar la caché entre builds.
+COPY proyectos/proyecto_iii/requirements-runtime.txt proyectos/proyecto_iii/requirements-runtime.txt
+RUN python -m pip install --no-cache-dir -r proyectos/proyecto_iii/requirements-runtime.txt
 
 COPY proyectos/proyecto_ii proyectos/proyecto_ii
 COPY proyectos/proyecto_iii proyectos/proyecto_iii
