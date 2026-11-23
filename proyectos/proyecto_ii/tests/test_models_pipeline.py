@@ -258,3 +258,23 @@ def test_cli_training_inference_and_evaluation(bars_file, tmp_path, capsys):
     assert main(['run', '--data', str(bars_file), '--artifact', str(run / 'model.joblib'),
                  '--output', str(run / 'report.json'), '--scenarios', '100', '--provider', 'mock']) == 0
     assert json.loads((run / 'report.json').read_text())['summary']['data_kind'] == 'synthetic'
+
+
+def test_evaluate_without_model_is_a_domain_error(tmp_path):
+    # Arrange: un run sin model.joblib (no se ejecutó train).
+    run = tmp_path / "vacio"
+    run.mkdir()
+
+    # Act / Assert: error de dominio en español, no el OSError crudo.
+    with pytest.raises(DataError, match="ejecuta train antes de evaluate"):
+        evaluate_holdout(run)
+
+
+def test_cli_reports_second_holdout_touch_in_spanish(trained, caplog):
+    from swarmtrade_app.cli import main
+    _, run, _, _ = trained
+    assert main(["evaluate", "--run", str(run)]) == 0
+    caplog.clear()
+    assert main(["evaluate", "--run", str(run)]) == 2
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert messages == ["El holdout de este run ya se evaluó una vez; entrena un run nuevo para volver a evaluar"]

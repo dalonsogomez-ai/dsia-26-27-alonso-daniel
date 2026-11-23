@@ -10,6 +10,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from ml_pipeline import guard
+
 from .ai_client import AIClient, AIClientError, AnalysisRequest
 from .data import DataError, generate_demo
 from .paper import PaperError
@@ -138,6 +140,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, default=str, ensure_ascii=False, allow_nan=False))
         LOG.info('Fin command=%s', args.command)
         return 0
+    except guard.TestSetAlreadyUsed:
+        # > El mensaje del guard vendorizado está pensado para un agente; aquí se traduce al usuario.
+        LOG.error('El holdout de este run ya se evaluó una vez; entrena un run nuevo para volver a evaluar')
+        return 2
     except (AIClientError, PaperError, DataError, ValueError, OSError, TypeError, KeyError, RuntimeError) as exc:
         # > Las excepciones externas del SDK se redactan en el borde AIClient.
         LOG.error('%s', str(exc))

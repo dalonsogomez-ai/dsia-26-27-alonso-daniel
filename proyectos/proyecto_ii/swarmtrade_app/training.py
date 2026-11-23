@@ -92,6 +92,8 @@ def train_prepared(run: Path, *, ledger: Path | None = None) -> dict:
 def evaluate_holdout(run: Path, *, ledger: Path | None = None) -> dict:
     """> Evaluar una sola vez el ganador congelado, sin selección posterior."""
     run = Path(run)
+    if not (run / 'model.joblib').is_file():
+        raise DataError(f'No existe model.joblib en {run.name}: ejecuta train antes de evaluate')
     artifact = joblib.load(run / 'model.joblib')
     prepared = load_prepared(run)
     result = {}
