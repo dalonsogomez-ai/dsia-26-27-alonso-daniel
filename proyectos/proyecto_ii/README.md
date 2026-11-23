@@ -6,13 +6,21 @@
 
 => Estado: implementación local y comprobaciones en [VERIFICACION.md](VERIFICACION.md). SwarmTrader sigue en investigación/backtesting; su auditoría G4 publicada da **NO ACCIONABLE**. Aquí se implementa la elección por convicción solicitada: elegir bajo incertidumbre no acredita ventaja. No hay trading real activado ni paper externo validado.
 
+## > Motivación
+
+> El problema es elegir hoy, con la información cerrada de la última sesión, una acción o combinación de acciones para mantener 21 sesiones, sabiendo que el retorno futuro es incierto y que la mayor parte de las señales de precio y volumen son débiles. Es una decisión repetida y con datos públicos diarios, lo que permite separar con rigor qué se sabía al decidir y qué se observa después.
+
+~> sklearn resuelve la parte medible: una **regresión** del retorno a 21 sesiones con factores causales, split temporal purgado y comparación contra un `DummyRegressor`. Hugging Face resuelve otra pieza distinta: convertir un resumen agregado (fecha, modelo, horizonte, media predicha y RMSE) en una **explicación en lenguaje natural** para quien lee el informe, sin decidir pesos ni ver datos crudos.
+
+> Hay continuidad con el Proyecto I: el contrato de barras diarias (`date`/`timestamp`, `symbol`, `close`, `volume`) es el que produce su extracción de Alpaca, de modo que el histórico autorizado entra sin transformaciones nuevas. Para el E2E del Proyecto III, este núcleo (datos → modelo persistido → inferencia → explicación) es el que el lote del III ejecuta y la API y el dashboard publican; por eso se aísla en módulos importables y no en la CLI.
+
 ## > Reproducir sin claves ni datos de terceros
 
-Desde esta carpeta, Python **3.12** y un entorno propio del Proyecto II:
+Desde esta carpeta, con Python **3.12**. El entorno `.venv-ii` vive en la raíz del repositorio y lo **comparten el II y el III**; el Proyecto I usa otro (`.venv-i`) porque fija pandas 3 y este requiere pandas 2 (`pandas<3`). No instales ambos `requirements.txt` en el mismo entorno.
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
+python3.12 -m venv ../../.venv-ii
+source ../../.venv-ii/bin/activate
 python -m pip install -r requirements.txt
 python -m swarmtrade_app demo-data --output data/demo.csv --sessions 680 --symbols 8 --seed 42
 python -m swarmtrade_app inspect --data data/demo.csv --output runs/demo-inspection
@@ -65,7 +73,7 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 ## > Hugging Face: una pieza diferente de sklearn
 
-Se sigue el estilo del ejemplo de clase `ai_api_client.py`: dataclasses de entrada/salida, `AIClientError` y proveedores `mock`/`hf`. HF realiza **chat_completion**, modelo [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct). Explica un resumen agregado después de inferir; no decide carteras ni envía órdenes. [AI_USAGE.md](AI_USAGE.md) documenta proveedor, tarea, modelo, costes acotados y aportaciones de IA.
+Se sigue el estilo del ejemplo de clase `ai_api_client.py`: dataclasses de entrada/salida, `AIClientError` y proveedores `mock`/`hf`. HF realiza **chat_completion**, modelo [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct). Explica un resumen agregado después de inferir; no decide carteras ni envía órdenes. Según el Hub el 23/11/2026, Qwen2.5-7B-Instruct tiene un único Inference Provider vivo, **featherless-ai**, que es el que resuelve hoy `HF_INFERENCE_PROVIDER=auto`. Si deja de estar disponible, `HF_MODEL=Qwen/Qwen3-8B` es una alternativa con la misma tarea conversacional, licencia Apache-2.0, sin acceso restringido y servida también por featherless-ai en esa fecha. Ninguna de las dos rutas se ha probado aquí con una llamada autenticada. [AI_USAGE.md](AI_USAGE.md) documenta proveedor, tarea, modelo, costes acotados y aportaciones de IA.
 
 ```bash
 cp .env.example .env
