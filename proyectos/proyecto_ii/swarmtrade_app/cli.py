@@ -44,7 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest='command', required=True)
     inspect = commands.add_parser('inspect', help='Perfil y EDA sin entrenar modelos')
     inspect.add_argument('--data', type=Path, required=True)
-    inspect.add_argument('--output', type=Path, default=ROOT / 'ml_pipeline')
+    inspect.add_argument('--output', type=Path, required=True,
+                         help='Directorio fuera del código, p. ej. runs/demo-inspection')
     demo = commands.add_parser('demo-data', help='CSV sintético reproducible, libre de datos Alpaca')
     demo.add_argument('--output', type=Path, required=True)
     demo.add_argument('--sessions', type=int, default=900)
