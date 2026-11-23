@@ -46,7 +46,7 @@ Arranca Uvicorn con esa ruta. El generador comprueba el hash de los datos y reut
 
 ## Operación y verificación
 
-- `--journal` escribe un JSONL por ejecución. Cada etapa tiene un inicio y un resultado con tiempo transcurrido. Un fallo incluye su tipo. El evento de publicación registra el `run_id`. Usa un archivo nuevo fuera de `--work` para conservar la evidencia.
+- `--journal` escribe un JSONL por ejecución. Cada etapa tiene un inicio y un resultado con tiempo transcurrido. Un fallo incluye su tipo. El evento de publicación registra el `run_id`. En `from-run`, la etapa `validate_input` valida el CSV con el contrato del II y registra solo agregados (`rows`, `symbols`, `input_sha256`) antes de `infer_snapshot`. Usa un archivo nuevo fuera de `--work` para conservar la evidencia.
 - `/health` confirma que el proceso tiene en memoria un snapshot válido. El timestamp del journal mide cuándo corrió el lote y `as_of` indica el cierre de los datos. Cada valor responde a una pregunta distinta durante la demo.
 - Para un servicio gestionado, configura [`.env.example`](.env.example) en las variables del entorno y apunta a un snapshot persistente. Arranca Uvicorn con el host, puerto y política de acceso del entorno. El despliegue de referencia es local con el mismo proceso para API y dashboard.
 - Suite desde la raíz:

@@ -49,3 +49,31 @@ def test_ai_failure_in_batch_publishes_snapshot_without_explanation(demo_run, mo
     assert [row.model_dump() for row in snapshot.predictions] == [
         row.model_dump() for row in demo_run.snapshot.predictions]
     assert json.loads(snapshot.model_dump_json())["explanation"] is None
+
+
+def test_from_run_journal_validates_input_before_inference(demo_run, tmp_path):
+    output, journal = tmp_path / "snapshot.json", tmp_path / "pipeline.jsonl"
+    assert main(["from-run", "--data", str(demo_run.bars), "--run", str(demo_run.run),
+                 "--output", str(output), "--journal", str(journal)]) == 0
+    events = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert [(event["stage"], event["status"]) for event in events] == [
+        (stage, status) for stage in ("validate_input", "infer_snapshot", "publish_snapshot")
+        for status in ("started", "succeeded")]
+    validated = events[1]
+    snapshot = read_snapshot(output)
+    assert (validated["rows"], validated["symbols"], validated["input_sha256"]) == (
+        680 * 8, 8, snapshot.input_sha256)
+    assert "rows" not in events[0]
+    assert str(demo_run.bars) not in journal.read_text()
+
+
+def test_invalid_input_fails_in_validate_input_and_publishes_nothing(demo_run, tmp_path):
+    broken = tmp_path / "bars.csv"
+    broken.write_text("date,symbol,close\n2026-01-02,AAA,1\n")
+    output, journal = tmp_path / "snapshot.json", tmp_path / "pipeline.jsonl"
+    assert main(["from-run", "--data", str(broken), "--run", str(demo_run.run),
+                 "--output", str(output), "--journal", str(journal)]) == 2
+    events = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert [(event["stage"], event["status"], event.get("error_type")) for event in events] == [
+        ("validate_input", "started", None), ("validate_input", "failed", "DataError")]
+    assert not output.exists()

@@ -15,7 +15,7 @@ from time import perf_counter_ns
 from typing import Iterator, TextIO
 
 from swarmtrade_app.ai_client import AIClientError, AnalysisRequest
-from swarmtrade_app.data import DataError, generate_demo
+from swarmtrade_app.data import DataError, file_sha256, generate_demo, load_bars
 from swarmtrade_app.pipeline import infer
 from swarmtrade_app.preparation import prepare
 from swarmtrade_app.training import evaluate_holdout, train_prepared
@@ -33,9 +33,11 @@ class RunJournal:
         self.stream = stream
 
     @contextmanager
-    def stage(self, stage: str, **fields: str) -> Iterator[None]:
+    def stage(self, stage: str, **fields: str) -> Iterator[dict]:
+        """Registrar inicio y resultado; lo que se añada al dict cedido viaja en el evento de éxito."""
+        details: dict = {}
         if self.stream is None:
-            yield
+            yield details
             return
 
         def emit(status: str, **details: str | float) -> None:
@@ -51,13 +53,20 @@ class RunJournal:
         emit("started")
         start = perf_counter_ns()
         try:
-            yield
+            yield details
         except Exception as error:
             emit("failed", duration_ms=(perf_counter_ns() - start) / 1e6,
                  error_type=type(error).__name__)
             raise
         else:
-            emit("succeeded", duration_ms=(perf_counter_ns() - start) / 1e6)
+            emit("succeeded", duration_ms=(perf_counter_ns() - start) / 1e6, **details)
+
+
+def validate_input(data: Path) -> dict:
+    """Validar el CSV con el contrato del II y devolver solo agregados (sin precios ni rutas)."""
+    bars = load_bars(data)
+    return {"rows": int(len(bars)), "symbols": int(bars["symbol"].nunique()),
+            "input_sha256": file_sha256(data)}
 
 
 def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
@@ -160,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.mode == "demo":
                 snapshot = demo(args.work, journal)
             else:
+                with journal.stage("validate_input") as details:
+                    details.update(validate_input(args.data))
                 with journal.stage("infer_snapshot"):
                     snapshot = from_run(args.data, args.run, args.provider)
             with journal.stage("publish_snapshot", run_id=snapshot.run_id):
