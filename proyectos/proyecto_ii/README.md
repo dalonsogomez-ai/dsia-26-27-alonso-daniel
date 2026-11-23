@@ -73,7 +73,7 @@ cp .env.example .env
 python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.joblib --output runs/demo/hf.json --provider hf
 ```
 
-> El cliente usa InferenceClient, timeout 30 s y máximo 256 tokens de salida por defecto, sin reintentos de aplicación. Disponibilidad, autorización y saldo dependen del proveedor actual. Si falta HF_TOKEN, devuelve error claro; si falla HF, conserva el informe con predicciones y `ai_status=pending`, sin simular respuesta real. No carga credenciales del Proyecto I. En tests/CI siempre mock/dobles, sin Internet ni gasto.
+> El cliente usa InferenceClient, timeout 30 s y máximo 256 tokens de salida por defecto, sin reintentos de aplicación. `HF_TIMEOUT` (1–120 s) y `HF_MAX_TOKENS` (1–512) se validan con un error de dominio, por ejemplo `HF_TIMEOUT debe ser un número entre 1 y 120`. `--provider` y `AI_PROVIDER` aceptan `huggingface` como alias de `hf`, sin distinguir mayúsculas. Disponibilidad, autorización y saldo dependen del proveedor actual. Si falta HF_TOKEN, la CLI lo detecta antes de cargar datos e inferir y no escribe informe: es un error de configuración. Si el token existe y falla el servicio HF, conserva el informe con predicciones y `ai_status=pending`, sin simular respuesta real. No carga credenciales del Proyecto I. En tests/CI siempre mock/dobles, sin Internet ni gasto.
 
 ## > Alpaca paper: plan y envío separados
 

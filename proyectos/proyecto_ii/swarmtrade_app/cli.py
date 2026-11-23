@@ -18,6 +18,24 @@ ROOT = Path(__file__).resolve().parents[1]
 LOG = logging.getLogger(__name__)
 
 
+def provider_name(value: str) -> str:
+    """> Normaliza el proveedor como la demo de clase: 'huggingface' es alias de 'hf'."""
+    name = value.lower().strip()
+    return 'hf' if name == 'huggingface' else name
+
+
+def env_number(name: str, default: str, cast: type, low: float, high: float) -> float | int:
+    """> Lee un límite numérico del entorno con un error de dominio en lugar del de Python."""
+    raw = os.getenv(name, default).strip()
+    try:
+        value = cast(raw)
+    except ValueError:
+        value = None
+    if value is None or not low <= value <= high:
+        raise DataError(f'{name} debe ser un número entre {low:g} y {high:g}')
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(ROOT / '.env', override=False)
     parser = argparse.ArgumentParser(description='-> SwarmTrader × DSIA: datos, sklearn y API HF')
@@ -49,7 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument('--risk-aversion', type=float, default=1)
     run.add_argument('--scenarios', type=int, default=3000)
     run.add_argument('--mean-source', choices=['model', 'empirical'], default='model')
-    run.add_argument('--provider', choices=['mock', 'hf'], default=os.getenv('AI_PROVIDER', 'mock'))
+    run.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
+                     default=os.getenv('AI_PROVIDER', 'mock'), help='mock, hf o su alias huggingface')
     run.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
     plan = commands.add_parser('paper-plan', help='Consultar cuenta paper y guardar plan; no envía órdenes')
     plan.add_argument('--report', type=Path, required=True)
@@ -61,7 +80,8 @@ def main(argv: list[str] | None = None) -> int:
     execute.add_argument('--liquidate', action='store_true', help='Liquidar posiciones previas y esperar su cierre')
     analyze = commands.add_parser('analyze-summary', help='Explicar un resumen agregado tipado')
     analyze.add_argument('--summary', type=Path, required=True)
-    analyze.add_argument('--provider', choices=['mock', 'hf'], default=os.getenv('AI_PROVIDER', 'mock'))
+    analyze.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
+                         default=os.getenv('AI_PROVIDER', 'mock'), help='mock, hf o su alias huggingface')
     analyze.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
@@ -100,9 +120,13 @@ def main(argv: list[str] | None = None) -> int:
                 result = broker.execute(json.loads(args.plan.read_text()), args.journal, liquidate=args.liquidate)
         else:
             from .pipeline import run_pipeline
-            client = AIClient(args.provider, args.model, timeout=float(os.getenv('HF_TIMEOUT', '30')),
-                              max_tokens=int(os.getenv('HF_MAX_TOKENS', '256')),
+            client = AIClient(args.provider, args.model, timeout=env_number('HF_TIMEOUT', '30', float, 1, 120),
+                              max_tokens=env_number('HF_MAX_TOKENS', '256', int, 1, 512),
                               inference_provider=os.getenv('HF_INFERENCE_PROVIDER', 'auto'))
+            if args.provider == 'hf' and not os.getenv('HF_TOKEN', '').strip():
+                # > Error de configuración: se detecta antes de inferir/optimizar. El informe `pending`
+                # queda para fallos del servicio HF una vez iniciada la llamada.
+                raise AIClientError('Falta HF_TOKEN en el entorno')
             if args.command == 'run':
                 result = run_pipeline(args.data, args.artifact, args.output, client, decision=args.decision,
                                       risk_aversion=args.risk_aversion, scenarios=args.scenarios,

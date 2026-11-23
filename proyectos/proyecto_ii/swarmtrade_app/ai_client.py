@@ -37,6 +37,8 @@ class AIResponse:
 class AIClient:
     def __init__(self, provider: str = 'mock', model: str | None = None,
                  timeout: float = 30, max_tokens: int = 256, inference_provider: str = 'auto'):
+        provider = str(provider).lower().strip()
+        provider = 'hf' if provider == 'huggingface' else provider  # > Alias de la demo de clase.
         if provider not in {'mock', 'hf'}:
             raise AIClientError('Proveedor no soportado; usa mock o hf')
         if not 1 <= timeout <= 120 or not 1 <= max_tokens <= 512:

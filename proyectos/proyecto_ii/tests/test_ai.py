@@ -80,6 +80,53 @@ def test_invalid_client_config(kwargs):
         AIClient(**kwargs)
 
 
+@pytest.mark.parametrize('alias', ['huggingface', ' HF ', 'HuggingFace'])
+def test_huggingface_alias_is_normalized(alias):
+    from swarmtrade_app.cli import provider_name
+    assert AIClient(alias).provider == 'hf'
+    assert provider_name(alias) == 'hf'
+    assert provider_name(' Mock ') == 'mock'
+
+
+@pytest.mark.parametrize('name,value,message', [
+    ('HF_TIMEOUT', 'abc', 'HF_TIMEOUT debe ser un número entre 1 y 120'),
+    ('HF_TIMEOUT', '0', 'HF_TIMEOUT debe ser un número entre 1 y 120'),
+    ('HF_TIMEOUT', 'nan', 'HF_TIMEOUT debe ser un número entre 1 y 120'),
+    ('HF_MAX_TOKENS', '12.5', 'HF_MAX_TOKENS debe ser un número entre 1 y 512'),
+    ('HF_MAX_TOKENS', '9999', 'HF_MAX_TOKENS debe ser un número entre 1 y 512')])
+def test_env_limits_have_domain_errors(monkeypatch, name, value, message):
+    from swarmtrade_app.cli import env_number
+    from swarmtrade_app.data import DataError
+    monkeypatch.setenv(name, value)
+    high, cast = (120, float) if name == 'HF_TIMEOUT' else (512, int)
+    with pytest.raises(DataError, match=message):
+        env_number(name, '30', cast, 1, high)
+
+
+def test_env_limits_defaults_and_valid_values(monkeypatch):
+    from swarmtrade_app.cli import env_number
+    assert env_number('HF_TIMEOUT', '30', float, 1, 120) == 30.0
+    monkeypatch.setenv('HF_MAX_TOKENS', ' 128 ')
+    assert env_number('HF_MAX_TOKENS', '256', int, 1, 512) == 128
+
+
+def test_cli_reports_invalid_timeout_clearly(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv('HF_TIMEOUT', 'abc')
+    summary = tmp_path / 'summary.json'
+    summary.write_text('{}')
+    assert main(['analyze-summary', '--summary', str(summary)]) == 2
+    assert 'HF_TIMEOUT debe ser un número entre 1 y 120' in caplog.text
+
+
+def test_cli_checks_token_before_heavy_work(tmp_path, caplog):
+    # >> Sin HF_TOKEN no se carga el CSV ni el artefacto: los paths ni siquiera existen.
+    output = tmp_path / 'hf.json'
+    assert main(['run', '--data', str(tmp_path / 'missing.csv'), '--artifact', str(tmp_path / 'missing.joblib'),
+                 '--output', str(output), '--provider', 'huggingface']) == 2
+    assert 'Falta HF_TOKEN' in caplog.text
+    assert not output.exists()
+
+
 @pytest.mark.integration
 def test_cli_demo_data(tmp_path, capsys):
     output = tmp_path / 'bars.csv'
