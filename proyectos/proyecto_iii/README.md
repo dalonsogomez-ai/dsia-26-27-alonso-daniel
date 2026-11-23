@@ -59,7 +59,7 @@ La prueba abre Chromium contra el servicio en marcha y comprueba que la respuest
   ```
 
 - **Render.** [`render.yaml`](../../render.yaml) describe el servicio desplegado: `runtime: docker` con el mismo [Dockerfile](Dockerfile) que el CI (el snapshot se genera en el build), contexto en la raíz, región Frankfurt, plan free, `healthCheckPath: /health` y `AI_PROVIDER=mock`; Render inyecta `$PORT` y el `CMD` escucha en él. `HF_TOKEN` y `DSIA_API_KEY` se introducen en el panel (`sync: false`). Para recrearlo: *New → Blueprint* con este repositorio, o *New → Web Service* con Language `Docker` y Dockerfile Path `./proyectos/proyecto_iii/Dockerfile`. Tras integrar la rama en `main`, cambia la rama del servicio a `main` en *Settings → Build & Deploy*. [`.python-version`](../../.python-version) fija Python 3.12 para el arranque sin contenedor.
-- **Procfile.** [`Procfile`](../../Procfile) sirve para plataformas tipo Heroku: genera el snapshot demo si falta y arranca Uvicorn en `$PORT`.
+- **Procfile.** [`Procfile`](../../Procfile) arranca sin contenedor en un runner que ya tenga instalado `proyectos/proyecto_ii/requirements.txt`: genera el snapshot demo si falta y lanza Uvicorn en `$PORT`. En Heroku no basta con el buildpack de Python, porque instalaría el `requirements.txt` raíz (solo el Proyecto I); allí usa el contenedor (`heroku stack:set container` con el mismo [Dockerfile](Dockerfile)), como en Render.
 - **Clave opcional.** Con `DSIA_API_KEY` definida, `POST /api/v1/analyze` exige `X-API-Key`. El resto de endpoints son de lectura.
 
 ## Informe con el histórico del Proyecto II
@@ -68,7 +68,7 @@ Sigue la [receta de entrenamiento e inferencia del II](../proyecto_ii/README.md#
 
 ```bash
 history_dir=$(mktemp -d)
-.venv/bin/python -m dsia_web.build from-run \
+.venv-ii/bin/python -m dsia_web.build from-run \
   --data "$DSIA_BARS_CSV" --run "$DSIA_FROZEN_RUN" --provider mock \
   --output "$history_dir/snapshot.json" --journal "$history_dir/pipeline.jsonl"
 export DSIA_SNAPSHOT="$history_dir/snapshot.json"
@@ -88,7 +88,7 @@ La licencia de Alpaca no permite publicar las barras, así que se versiona solo 
 | Holdout (un toque) | RMSE 0,0919 · MAE 0,0705 · R² −0,0059 · acierto de signo 0,589 |
 | Journal | `validate_input` 32,7 ms → `infer_snapshot` 132,4 ms → `publish_snapshot` 0,7 ms |
 
-El archivo no contiene precios, predicciones por símbolo, `input_summary` ni el texto de la explicación. Se regenera con `python -m dsia_web.evidence --snapshot <snapshot> --journal <pipeline.jsonl> --output <nuevo.json>`. En local, el mismo snapshot pasa `smoke_test.sh` y `browser_smoke.py --kind "Histórico Alpaca" --expect-pipeline`.
+`run_id` incluye `generated_at`, así que cambia en cada ejecución aunque los datos y el modelo sean los mismos; para comparar una regeneración usa `input_sha256`, `artifact_sha256`, `validation`, `holdout` y `splits`, que sí se reproducen. El archivo no contiene precios, predicciones por símbolo, `input_summary` ni el texto de la explicación. Se regenera con `python -m dsia_web.evidence --snapshot <snapshot> --journal <pipeline.jsonl> --output <nuevo.json>`. En local, el mismo snapshot pasa `smoke_test.sh` y `browser_smoke.py --kind "Histórico Alpaca" --expect-pipeline`.
 
 ## Operación y verificación
 
