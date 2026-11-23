@@ -2,7 +2,7 @@
 # Se compila con las versiones fijadas del II como restricción, así que no introduce versiones nuevas:
 #   uv pip compile proyectos/proyecto_iii/requirements-runtime.in \
 #     -c proyectos/proyecto_ii/requirements.txt -o proyectos/proyecto_iii/requirements-runtime.txt --python-version 3.12
-# ~> Fuera: marimo, pytest, pytest-cov, alpaca-py y httpx2 (notebooks, pruebas y descarga del I).
+# ~> Fuera: marimo, pytest, pytest-cov y httpx2 (notebooks y pruebas). alpaca-py descarga las barras reales en el build.
 numpy
 pandas
 scipy
@@ -11,6 +11,7 @@ joblib
 matplotlib
 huggingface_hub
 python-dotenv
+alpaca-py
 starlette
 uvicorn
 pydantic

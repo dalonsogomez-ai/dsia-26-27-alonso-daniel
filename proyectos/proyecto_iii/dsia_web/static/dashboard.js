@@ -5,7 +5,7 @@ const percent = new Intl.NumberFormat("es-ES", {style: "percent", maximumFractio
 const decimal = new Intl.NumberFormat("es-ES", {minimumFractionDigits: 4, maximumFractionDigits: 4});
 const millis = new Intl.NumberFormat("es-ES", {minimumFractionDigits: 1, maximumFractionDigits: 1});
 const modelNames = {dummy: "Dummy", ridge: "Ridge", swarm: "Swarm sklearn"};
-const dataNames = {synthetic: "Simulación sintética", alpaca: "Histórico Alpaca", local: "Histórico local"};
+const dataNames = {synthetic: "Simulación sintética", alpaca: "Datos reales · Alpaca", local: "Histórico local"};
 
 function element(tag, content, className) {
   const node = document.createElement(tag);
@@ -75,9 +75,13 @@ function render(report) {
   document.getElementById("splits").replaceChildren(...periods);
   const predictions = [...report.predictions].sort((a, b) => b.predicted_return - a.predicted_return);
   renderSpotlight(predictions[0], report.horizon_sessions);
+  if (predictions[0]) document.getElementById("filter").placeholder = `p. ej. ${predictions[0].symbol}`;
+  text("disclaimer", report.data_kind === "synthetic"
+    ? "Investigación académica con datos sintéticos de demostración: no es una recomendación de inversión."
+    : "Investigación académica con datos reales: señales de un modelo, no una recomendación de inversión.");
   renderPredictions(predictions);
   document.getElementById("filter").addEventListener("input", () => renderPredictions(predictions));
-  renderInputs(report.input_summary);
+  renderInputs(report.input_summary, report.data_kind);
   const options = predictions.map(row => {
     const option = element("option", row.symbol);
     option.value = row.symbol;
@@ -96,7 +100,7 @@ function renderSpotlight(best, horizon) {
   text("top-note", `Retorno predicho a ${horizon ?? 21} sesiones · señal de investigación, no recomendación`);
 }
 
-function renderInputs(summary) {
+function renderInputs(summary, dataKind) {
   const price = new Intl.NumberFormat("es-ES", {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const optional = (value, format) => value === null || value === undefined ? "—" : format.format(value);
   const rows = (summary ?? []).map(item => {
@@ -108,9 +112,13 @@ function renderInputs(summary) {
       element("td", optional(item.volatility_annualized, percent)));
     return tr;
   });
-  document.getElementById("inputs").replaceChildren(...rows);
+  const body = document.getElementById("inputs");
+  body.replaceChildren(...rows);
+  body.closest(".table-wrap").hidden = !rows.length;
   text("inputs-note", rows.length ? `${rows.length} símbolos · fuente: snapshot cargado`
-    : "Este informe no incluye resumen de datos de entrada.");
+    : dataKind === "alpaca"
+      ? "Barras diarias reales de Alpaca, descargadas y reentrenadas en cada despliegue. Sus condiciones no permiten redistribuir los datos, así que el informe público muestra solo las predicciones y las métricas del modelo, sin precios."
+      : "Este informe no incluye resumen de datos de entrada.");
 }
 
 async function getJSON(url) {
