@@ -77,6 +77,33 @@ def test_prediction_unknown_symbol_is_404_and_without_snapshot_is_503(demo_run, 
     assert invalid.status_code == 422
 
 
+def test_metrics_report_counters_uptime_latency_and_loaded_run(demo_run):
+    ticks = iter([1000.0, 1042.5])
+    with TestClient(create_app(demo_run.path, metrics_clock=lambda: next(ticks))) as client:
+        client.get("/health")
+        client.get("/health")
+        client.get("/api/v1/predictions/ZZZZ")
+        client.get("/api/v1/predictions/aapl")
+        response = client.get("/api/v1/metrics")
+    assert response.status_code == 200
+    body = response.json()
+    latency = body.pop("latency_ms")
+    assert body == {
+        "uptime_s": 42.5, "requests_total": 4, "run_id": demo_run.snapshot.run_id,
+        "requests": [{"route": "/api/v1/predictions/{symbol}", "status": 404, "count": 1},
+                     {"route": "/api/v1/predictions/{symbol}", "status": 422, "count": 1},
+                     {"route": "/health", "status": 200, "count": 2}],
+    }
+    assert latency["samples"] == 4
+    assert 0 <= latency["mean"] and 0 <= latency["p95"]
+
+
+def test_metrics_without_snapshot_have_null_run_id(tmp_path):
+    with TestClient(create_app(tmp_path / "falta.json")) as client:
+        body = client.get("/api/v1/metrics").json()
+    assert (body["run_id"], body["requests_total"], body["latency_ms"]["mean"]) == (None, 0, None)
+
+
 def test_oversized_snapshot_is_rejected_and_service_reports_503(tmp_path):
     path = tmp_path / "snapshot.json"
     path.write_bytes(b" " * 2_000_001)

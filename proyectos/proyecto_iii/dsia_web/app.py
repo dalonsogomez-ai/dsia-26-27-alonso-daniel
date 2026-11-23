@@ -10,7 +10,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter
+from time import monotonic, perf_counter
 from typing import Annotated, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -75,7 +75,8 @@ def is_readable_file(path: Path | None) -> bool:
 
 def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None = None,
                api_key: str | None = None, clock: Callable[[], datetime] = utc_now,
-               ai_client_factory: Callable[[], AIClient] = client_from_env) -> Starlette:
+               ai_client_factory: Callable[[], AIClient] = client_from_env,
+               metrics_clock: Callable[[], float] = monotonic) -> Starlette:
     @asynccontextmanager
     async def lifespan(app: Starlette):
         path = snapshot_path or Path(os.getenv("DSIA_SNAPSHOT", "runs/dsia-demo/snapshot.json"))
@@ -196,6 +197,12 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
             "model": answer.model, "request_id": rid, "latency_ms": latency_ms,
         }, headers={"Cache-Control": "no-store"})
 
+    async def service_metrics(request: Request) -> JSONResponse:
+        snapshot: Snapshot | None = request.app.state.snapshot
+        return JSONResponse({**request.app.state.metrics.summary(),
+                             "run_id": snapshot.run_id if snapshot else None},
+                            headers={"Cache-Control": "no-store"})
+
     async def pipeline(request: Request) -> JSONResponse:
         raw = request.query_params.get("limit", str(DEFAULT_EVENTS))
         if not raw.isdigit() or not 1 <= int(raw) <= MAX_EVENTS:
@@ -213,13 +220,14 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
             "last_run_id": next((event["run_id"] for event in reversed(events) if "run_id" in event), None),
         }, headers={"Cache-Control": "no-store"})
 
-    metrics = RequestMetrics()
+    metrics = RequestMetrics(clock=metrics_clock)
     application = Starlette(lifespan=lifespan, routes=[
         Route("/", dashboard), Route("/health", health),
         Route("/api/v1/snapshot", report), Route("/api/v1/snapshot/schema", schema),
         Route("/api/v1/predictions/{symbol}", prediction),
         Route("/api/v1/analyze", analyze, methods=["POST"]),
         Route("/api/v1/pipeline", pipeline),
+        Route("/api/v1/metrics", service_metrics),
         Mount("/static", app=StaticFiles(directory=STATIC)),
     ], middleware=[Middleware(ObservabilityMiddleware, metrics=metrics)])
     application.state.metrics = metrics

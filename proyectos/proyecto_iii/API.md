@@ -10,6 +10,7 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 | GET | /api/v1/snapshot/schema | 200 con JSON Schema del documento |
 | POST | /api/v1/analyze | 200 con explicación de IA del símbolo, `provider`, `model`, `request_id` y `latency_ms`; 400, 401, 404, 413, 415, 422 o 503 tipados (ver abajo) |
 | GET | /api/v1/pipeline?limit=N | 200 con los últimos N eventos (1–50, 20 por defecto) del journal de `DSIA_JOURNAL`; 422 `invalid_limit`; 404 `journal_not_configured`; 503 `journal_unavailable` |
+| GET | /api/v1/metrics | 200 con `uptime_s`, `requests_total`, contadores por ruta y estado, latencia media y p95 aproximada de las últimas 1024 peticiones y `run_id` cargado (`null` sin snapshot) |
 | GET | /api/v1/predictions/{symbol} | 200 con predicción, posición en el ranking y resumen de entrada del símbolo; 422 `invalid_symbol` si no cumple `^[A-Z0-9.]{1,32}$`; 404 `symbol_not_found`; 503 `snapshot_unavailable` |
 
 ## Análisis bajo demanda
@@ -37,6 +38,16 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 ## Journal del lote
 
 `GET /api/v1/pipeline` lee como máximo los últimos 64 KiB del JSONL y devuelve `{"events": [...], "returned": n, "skipped_lines": k, "last_run_id": "…"}`. Las líneas corruptas o sin `stage`/`status` se cuentan en `skipped_lines` y no rompen la respuesta. De cada evento solo salen `timestamp`, `stage`, `status`, `duration_ms`, `run_id`, `error_type`, `rows`, `symbols` e `input_sha256`; cualquier otro campo, como una ruta, se descarta.
+
+## Métricas de servicio
+
+`GET /api/v1/metrics` devuelve contadores en memoria del proceso (se reinician con él y no se comparten entre workers). Las rutas se agrupan por plantilla (`/api/v1/predictions/{symbol}`, `/static`, `unmatched` para 404 sin ruta) para acotar la cardinalidad. La petición en curso no se cuenta porque se registra al terminar.
+
+```json
+{"uptime_s": 42.5, "requests_total": 4, "run_id": "…",
+ "requests": [{"route": "/health", "status": 200, "count": 2}],
+ "latency_ms": {"samples": 4, "mean": 1.8, "p95": 3.2}}
+```
 
 ## Salud
 
