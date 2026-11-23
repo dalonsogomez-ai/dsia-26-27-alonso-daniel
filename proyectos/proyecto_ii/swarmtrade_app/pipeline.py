@@ -18,6 +18,17 @@ from .ai_client import AIClient, AnalysisRequest
 from .data import DataError, FEATURES, feature_panel, file_sha256, load_bars
 
 LOG = logging.getLogger(__name__)
+# > Pesos por debajo de este umbral son residuo numérico del solver, no una decisión de cartera.
+MIN_WEIGHT = 1e-6
+
+
+def significant_weights(weights, threshold: float = MIN_WEIGHT) -> np.ndarray:
+    """Anula pesos residuales (< threshold) y renormaliza a 1 sin cambiar el orden de los activos."""
+    weights = np.clip(np.asarray(weights, dtype=float), 0, None)
+    kept = np.where(weights >= threshold, weights, 0.0)
+    if kept.sum() <= 0:
+        raise DataError('El optimizador no produjo pesos significativos')
+    return kept / kept.sum()
 
 
 def infer(data: Path, artifact_path: Path) -> tuple[dict, dict, pd.DataFrame]:
@@ -87,19 +98,21 @@ def conviction(report: dict, artifact: dict, bars: pd.DataFrame, *, risk_aversio
             raise DataError('La media predicha queda fuera del dominio de retornos brutos positivos')
         gross *= (1 + mu) / gross.mean(axis=0)
         sol = solve_simplex(gross, gamma=risk_aversion, tol=cfg.tol, max_iter=cfg.max_iter)
+        weights = significant_weights(sol.weights)
         best_single = max(range(len(names)), key=lambda j: certainty_equivalent(gross[:, j], risk_aversion))
-        output = {'weights': {s: float(w) for s, w in zip(names, sol.weights) if w > 0},
+        output = {'weights': {s: float(w) for s, w in zip(names, weights) if w > 0},
                   'cash': 0.0, 'gap': float(sol.gap),
-                  'certainty_equivalent': certainty_equivalent(gross @ sol.weights, risk_aversion),
+                  'certainty_equivalent': certainty_equivalent(gross @ weights, risk_aversion),
                   'alternatives': {'best_single_symbol': names[best_single],
                                    'best_single': certainty_equivalent(gross[:, best_single], risk_aversion),
                                    'equal_universe': certainty_equivalent(gross.mean(axis=1), risk_aversion)},
                   'table': [{'symbol': s, 'weight': float(w), 'mu': float(mu[j]),
                              'sd': float(gross[:, j].std()), 'p_success': float((gross[:, j] > 1.05).mean())}
-                            for j, (s, w) in enumerate(zip(names, sol.weights))],
+                            for j, (s, w) in enumerate(zip(names, weights))],
                   'info': {**bank.info, 'n_candidates': len(names), 'n_scenarios': scenarios,
                            'risk_aversion': risk_aversion, 'converged': bool(sol.converged),
-                           'iterations': sol.iterations, 'allow_cash': False},
+                           'iterations': sol.iterations, 'allow_cash': False,
+                           'min_weight_reported': MIN_WEIGHT},
                   'notes': ['Las medias sklearn se usan como estimaciones, sin acreditar calibración. '
                             'El óptimo es condicional a estos escenarios, no a todos los futuros reales.'] + bank.notes}
     else:

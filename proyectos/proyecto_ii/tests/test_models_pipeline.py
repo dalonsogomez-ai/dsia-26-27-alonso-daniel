@@ -89,6 +89,13 @@ def test_test_set_frozen_and_only_once(trained):
                          metric_fn=lambda a, b: 0, state_dir=run, pipeline_md=run / 'PIPELINE.md')
     result = evaluate_holdout(run)
     assert result['touches'] == 1 and result['selected'] == report['selected']
+    assert json.loads((run / '.guard_state.json').read_text())['test_touches'] == 1
+    baseline = result['baseline']
+    assert baseline['model'] == 'dummy_mean_train'
+    assert baseline['prediction'] == pytest.approx(p.train['target'].mean())
+    expected = np.sqrt(np.mean((p.holdout['target'] - p.train['target'].mean()) ** 2))
+    assert baseline['rmse'] == pytest.approx(expected)
+    assert json.loads((run / 'test_metrics.json').read_text())['baseline'] == baseline
     with pytest.raises(guard.TestSetAlreadyUsed):
         evaluate_holdout(run)
 
@@ -160,6 +167,35 @@ def test_conviction_risk_neutral_uses_model_argmax(trained):
     for row in result['table']:
         expected = next(r['predicted_return'] for r in report['predictions'] if r['symbol'] == row['symbol'])
         assert row['mu'] == pytest.approx(expected)
+
+
+def test_significant_weights_drops_residuals_and_renormalizes():
+    from swarmtrade_app.pipeline import significant_weights
+    result = significant_weights([5.7e-08, 1.5e-09, 0.99999, 9.7e-06, -1e-12])
+    assert result[0] == result[1] == result[4] == 0
+    assert result.sum() == pytest.approx(1, abs=1e-15)
+    assert result[3] == pytest.approx(9.7e-06 / (0.99999 + 9.7e-06))
+    with pytest.raises(DataError, match='significativos'):
+        significant_weights([1e-9, 0.0])
+
+
+def test_model_allocation_has_no_residual_weights(trained, monkeypatch):
+    import dataclasses
+    from swarmtrade_app import pipeline
+    data, run, _, _ = trained
+    real = pipeline.solve_simplex
+    def with_residuals(*args, **kwargs):
+        # > Reproduce el residuo observado en la demo (p. ej. 1,5e-09) sobre la solución real.
+        sol = real(*args, **kwargs)
+        residual = np.where(sol.weights < 1e-6, 1.5e-9, sol.weights)
+        return dataclasses.replace(sol, weights=residual / residual.sum())
+    monkeypatch.setattr(pipeline, 'solve_simplex', with_residuals)
+    report, artifact, bars = infer(data, run / 'model.joblib')
+    result = conviction(report, artifact, bars, scenarios=100)
+    assert len(result['weights']) < 6
+    assert min(result['weights'].values()) >= 1e-6
+    assert sum(result['weights'].values()) == pytest.approx(1, abs=1e-12)
+    assert sum(row['weight'] for row in result['table']) == pytest.approx(1, abs=1e-12)
 
 
 def test_empirical_mode_keeps_upstream_small_universe_diagnostic(trained):
