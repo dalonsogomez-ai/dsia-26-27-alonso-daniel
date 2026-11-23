@@ -44,6 +44,18 @@ class Prediction(Contract):
     predicted_return: FiniteFloat
 
 
+class InputSummary(Contract):
+    """Resumen por símbolo de las barras de entrada hasta ``as_of`` para explorar los datos."""
+
+    symbol: Annotated[str, Field(min_length=1, max_length=32)]
+    sessions: Annotated[int, Field(gt=0, description="Sesiones con barra en el CSV")]
+    last_close: Annotated[FiniteFloat, Field(gt=0, description="Último cierre")]
+    return_21_sessions: Annotated[FiniteFloat | None, Field(
+        description="Retorno realizado de las últimas 21 sesiones")] = None
+    volatility_annualized: Annotated[FiniteFloat | None, Field(
+        ge=0, description="Desviación típica de los últimos 63 retornos diarios × √252")] = None
+
+
 class Explanation(Contract):
     provider: Literal["mock", "huggingface"]
     task: Literal["chat_completion"]
@@ -70,9 +82,12 @@ class Snapshot(Contract):
     predictions: Annotated[list[Prediction], Field(min_length=5)]
     evidence: Literal["advantage_not_demonstrated"] = "advantage_not_demonstrated"
     explanation: Explanation | None = None
+    # > Campo opcional añadido tras la RC1: los snapshots previos siguen validando con su run_id.
+    input_summary: list[InputSummary] | None = None
 
     def content_digest(self) -> str:
-        document = self.model_dump(mode="json", exclude={"run_id"})
+        excluded = {"run_id"} if self.input_summary is not None else {"run_id", "input_summary"}
+        document = self.model_dump(mode="json", exclude=excluded)
         raw = json.dumps(document, sort_keys=True, allow_nan=False, separators=(",", ":"))
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -89,6 +104,10 @@ class Snapshot(Contract):
             raise ValueError("El holdout contiene etiquetas posteriores a la fecha de corte")
         if len({item.symbol for item in self.predictions}) != len(self.predictions):
             raise ValueError("Símbolos duplicados en las predicciones")
+        if self.input_summary is not None and (
+                sorted(item.symbol for item in self.input_summary)
+                != sorted(item.symbol for item in self.predictions)):
+            raise ValueError("El resumen de entrada no cubre exactamente los símbolos predichos")
         if self.generated_at.tzinfo is None or self.generated_at.date() < self.as_of:
             raise ValueError("Fecha de generación incompatible")
         if self.run_id != self.content_digest():

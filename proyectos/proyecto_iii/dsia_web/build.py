@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import tempfile
 from contextlib import contextmanager, nullcontext
@@ -14,6 +15,8 @@ from pathlib import Path
 from time import perf_counter_ns
 from typing import Iterator, TextIO
 
+import numpy as np
+import pandas as pd
 from swarmtrade_app.ai_client import AIClientError, AnalysisRequest
 from swarmtrade_app.data import DataError, file_sha256, generate_demo, load_bars
 from swarmtrade_app.pipeline import infer
@@ -21,7 +24,8 @@ from swarmtrade_app.preparation import prepare
 from swarmtrade_app.training import evaluate_holdout, train_prepared
 
 from .ai import client_from_env
-from .snapshot import Explanation, Metrics, Period, Prediction, Snapshot, create_snapshot
+from .snapshot import (Explanation, InputSummary, Metrics, Period, Prediction, Snapshot,
+                       create_snapshot)
 
 LOG = logging.getLogger(__name__)
 
@@ -69,12 +73,27 @@ def validate_input(data: Path) -> dict:
             "input_sha256": file_sha256(data)}
 
 
+def summarize_inputs(bars: pd.DataFrame, horizon: int = 21, window: int = 63) -> list[InputSummary]:
+    """Último cierre, retorno realizado a ``horizon`` sesiones y volatilidad anualizada por símbolo."""
+    summary = []
+    for symbol, group in bars.sort_values("date").groupby("symbol", sort=True):
+        closes = group["close"].to_numpy(dtype=float)
+        daily = closes[1:] / closes[:-1] - 1
+        recent = daily[-window:]
+        summary.append(InputSummary(
+            symbol=str(symbol), sessions=len(closes), last_close=float(closes[-1]),
+            return_21_sessions=float(closes[-1] / closes[-1 - horizon] - 1) if len(closes) > horizon else None,
+            volatility_annualized=float(np.std(recent, ddof=1) * math.sqrt(252)) if len(recent) > 1 else None,
+        ))
+    return summary
+
+
 def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
     """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado.
 
     El cliente de IA toma modelo, timeout y proveedor de inferencia del entorno (``HF_*``).
     """
-    report, artifact, _ = infer(data, run / "model.joblib")
+    report, artifact, bars = infer(data, run / "model.joblib")
     validation = artifact["report"]
     holdout = json.loads((run / "test_metrics.json").read_text())
     summary = AnalysisRequest(**report["summary"])
@@ -106,6 +125,7 @@ def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
         }),
         "predictions": [Prediction.model_validate(row) for row in report["predictions"]],
         "explanation": explanation,
+        "input_summary": summarize_inputs(bars, horizon=summary.horizon),
     })
 
 
