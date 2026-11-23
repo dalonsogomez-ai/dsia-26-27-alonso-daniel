@@ -14,50 +14,61 @@
 
 `=>` Resultado obtenido o estado final de la fecha.
 
-![CI](https://github.com/dalonsoLabs/dsia-26-27-alonso-daniel/actions/workflows/ci.yml/badge.svg?branch=main)
+![CI](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml/badge.svg?branch=main)
 
-`->` Construir las dos partes del [enunciado del profesor](https://github.com/dmartincc/dsia-26-27/blob/main/proyectos/proyecto_i/README.md): pipeline de ventas (A) y pipeline de barras diarias de acciones de Alpaca (B), siguiendo carga → validación → métricas → CLI, con excepciones de dominio, pytest y un workflow común de CI. El repositorio de entrega temporal está en la cuenta `dalonsoLabs`.
+`->` Construir las dos partes del [enunciado del profesor](https://github.com/dmartincc/dsia-26-27/blob/b76b9508acd7ecdf41da9890d35dfdefaa20847f/proyectos/proyecto_i/README.md) (enlace fijado a la versión vigente; copia en [INSTRUCTIONS.md](INSTRUCTIONS.md)): pipeline de ventas (A) y pipeline de barras diarias de acciones de Alpaca (B), siguiendo carga → validación → métricas → CLI, con excepciones de dominio, pytest y un workflow común de CI. Repositorio de entrega: [dalonsogomez-ai/dsia-26-27-alonso-daniel](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel) (la cuenta se llamaba antes `dalonsoLabs`).
 
 ## Instalación
 
-`>` Desde la raíz del repositorio, con **Python 3.12**:
+`>` Desde la raíz del repositorio, con **Python 3.12**. El entorno del Proyecto I se llama `.venv-i` (el `.gitignore` raíz excluye `.venv-*/`; los Proyectos II y III usan otro entorno):
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
+python3.12 -m venv .venv-i
+source .venv-i/bin/activate
 python -m pip install -r requirements.txt
 cd proyectos/proyecto_i
 ```
 
-`>` En Windows, activar con `.venv\Scripts\activate` antes de cambiar de carpeta. Todos los comandos siguientes se ejecutan desde `proyectos/proyecto_i/`, con el entorno activo. Las versiones directas están fijadas en `requirements.txt`; pandas es la dependencia de runtime. `pytest` y `pytest-cov` verifican la entrega, e `ipykernel` conserva el soporte de los notebooks de clase. No es necesario tener Alpaca para ejecutar los tests.
+`>` En Windows, activar con `.venv-i\Scripts\activate` antes de cambiar de carpeta. Todos los comandos siguientes se ejecutan desde `proyectos/proyecto_i/`, con el entorno activo. Las versiones directas están fijadas en `requirements.txt`; pandas es la dependencia de runtime. `pytest` y `pytest-cov` verifican la entrega, e `ipykernel` conserva el soporte de los notebooks de clase. No es necesario tener Alpaca para ejecutar los tests.
 
 ## Estructura
 
 ```text
 proyectos/proyecto_i/
   README.md
-  INSTRUCTIONS.md           # >> Copia del enunciado
-  ALPACA.md                 # >> Procedencia y extracción reproducible
-  VERIFICACION.md            # >> Evidencia de la entrega
+  INSTRUCTIONS.md             # >> Copia del enunciado
+  ALPACA.md                   # >> Procedencia y extracción reproducible
+  VERIFICACION.md             # >> Evidencia de la entrega
+  AI_USAGE.md                 # >> Registro del uso de IA
   requirements.txt
   pytest.ini
-  ventas_app/               # -> Parte A: loader, validator, metrics, cli
-  acciones_app/             # -> Parte B: loader, validator, metrics, cli
+  ventas_app/                 # -> Parte A: loader, validator, metrics, cli
+  acciones_app/               # -> Parte B: loader, validator, metrics, cli
+  scripts/
+    generar_muestra_acciones.py  # > Genera la muestra sintética de B (sin red)
   tests/
-    conftest.py             # >> Fixtures sintéticas en memoria
-    ventas/                 # >> Tests de los cuatro módulos de A
-    acciones/               # >> Tests de los cuatro módulos de B
+    conftest.py               # >> Fixtures sintéticas en memoria
+    ventas/                   # >> Tests de los cuatro módulos de A
+    acciones/                 # >> Tests de los cuatro módulos de B y del generador
+    test_extraccion_alpaca.py # >> Tests sin red de los scripts de extracción
   data/
-    ventas.csv              # >> CSV del curso, versionado
-    raw/                    # >> Descargas locales, excluidas de Git
-    processed/              # >> Resultados locales, excluidos de Git
-  descargar_alpaca.py        # > Descarga paginada del dataset B
+    ventas.csv                # >> CSV del curso, versionado
+    sample/
+      acciones_muestra.csv    # >> Muestra SINTÉTICA de B, versionada (sin datos de Alpaca)
+    raw/                      # >> Descargas locales, excluidas de Git
+    processed/                # >> Resultados locales, excluidos de Git
+  descargar_alpaca.py         # > Descarga paginada del dataset B (diez símbolos)
+  alpaca_io.py                # > E/S común: CLI de solo lectura, paginación y checkpoints
+  descargar_alpaca_completo.py  # > Extracción ampliada con checkpoints
   descargar_alpaca_masivo.py
   descargar_alpaca_eventos.py
-  descargar_alpaca_actual.py
+  descargar_alpaca_actual.py  # > Capturas actuales (requiere data/raw/alpaca_activos.json)
   continuar_alpaca.py
   estado_alpaca.py
+  auditar_alpaca.py           # > Comprueba manifiestos e integridad de las descargas
 ```
+
+`~>` Los scripts de extracción de Alpaca son herramientas auxiliares: no forman parte del pipeline evaluado ni de la cobertura medida (`--cov=ventas_app --cov=acciones_app`), pero tienen sus propios tests sin red en `tests/test_extraccion_alpaca.py`.
 
 `~>` Los paquetes, tests, datos y dependencias están agrupados en esta carpeta como muestra el enunciado. El material de prácticas se organiza en `1_programacion_avanzada_python/` y `2_pruebas_y_despliegue/`, en la raíz del repositorio. El workflow único está en la raíz, en `.github/workflows/ci.yml`, y ejecuta ambos paquetes desde esta carpeta. pytest descubre solo los tests de la entrega.
 
@@ -89,7 +100,15 @@ python -m ventas_app.cli \
 
 `>>` Origen: [Alpaca Market Data API](https://docs.alpaca.markets/us/docs/about-market-data-api), endpoint `https://data.alpaca.markets/v2/stocks/bars`. Alpaca [prohíbe redistribuir los datos obtenidos mediante su API](https://alpaca.markets/support/redistribute-alpaca-api). Se entrega el **script documentado**, alternativa permitida por el enunciado, y se excluyen de Git las descargas y los resultados derivados. Las fixtures de los tests y la [muestra versionada](data/sample/acciones_muestra.csv) son **sintéticas**, no cotizaciones redistribuidas.
 
-`>` Para reproducir la descarga, instalar la [CLI oficial de Alpaca](https://docs.alpaca.markets/us/docs/alpacas-cli), iniciar sesión con `alpaca profile login` y ejecutar:
+`>` Prerrequisitos reales para reproducir la descarga (no hacen falta para los tests ni para la muestra sintética):
+
+- `>` una **cuenta gratuita de Alpaca** y sesión iniciada con `alpaca profile login`;
+- `>` el binario **`alpaca`** de la [CLI oficial](https://docs.alpaca.markets/us/docs/alpacas-cli), que **no se instala con pip** ni está en `requirements.txt`; los scripts lo invocan con `subprocess`;
+- `>` **acceso a red**; con el plan Basic y feed SIP, `--end` debe ser un día de mercado ya cerrado (detalle en [ALPACA.md](ALPACA.md)).
+
+`=>` Un revisor sin cuenta ni red puede validar la Parte B igualmente con la [muestra sintética](#ejecución-sin-red-con-la-muestra-sintética) versionada.
+
+`>` Con esos prerrequisitos, ejecutar:
 
 ```bash
 python descargar_alpaca.py \
@@ -170,19 +189,23 @@ pytest -q -m integration
 pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-under=60
 ```
 
-`>>` Hay tests de `loader`, `validator`, `metrics` y `cli` en ambas partes. Se usan fixtures en memoria y `tmp_path`, Arrange/Act/Assert, `pytest.raises` y `parametrize`. Los tests de integración comprueban el CSV del curso (140/10) y los puntos de entrada `python -m ...` con archivos temporales; no acceden a la red ni usan rutas propias de una máquina.
+`>>` Hay tests de `loader`, `validator`, `metrics` y `cli` en ambas partes. Se usan fixtures en memoria y `tmp_path`, Arrange/Act/Assert (marcado explícitamente en tests de A y de B), `pytest.raises` y `parametrize`. Los cuatro tests de integración comprueban el CSV del curso (140/10), la CLI de B sobre la muestra sintética versionada (296/5 y las tres métricas) y los puntos de entrada `python -m ...` con archivos temporales; no acceden a la red ni usan rutas propias de una máquina.
 
 `>` Desde la raíz se puede ejecutar también `python -m pytest -q`: el `pytest.ini` raíz apunta a los tests de esta carpeta. Los tests de ejemplo del Tema 2 se ejecutan por separado.
 
-`=>` Verificación local del 13 de octubre de 2026: **98 tests en verde**, de los cuales 3 son de integración, y **99,25 % de cobertura conjunta**. Incluyen regresiones para valores infinitos, importes no representables, errores de codificación, extensiones gzip en mayúsculas y protección del archivo de entrada. Las CLI procesaron también el CSV real de ventas (140/10) y el CSV descargado de Alpaca (21.960 válidas, 0 inválidas).
+`=>` **Cifras vigentes, 23/11/2026** (Python 3.12.13, `.venv-i`, desde esta carpeta): **177 tests en verde**, de los cuales **173 unitarios** (`-m "not integration"`) y **4 de integración**, con **99,31 % de cobertura conjunta** de `ventas_app` y `acciones_app` (gate 60 %). Las CLI procesan el CSV del curso (140/10) y la muestra sintética de B (296/5).
+
+`>>` Cifras históricas del **13/10/2026**, conservadas como referencia: 98 tests en verde, 3 de integración y 99,25 % de cobertura. Incluían regresiones para valores infinitos, importes no representables, errores de codificación, extensiones gzip en mayúsculas y protección del archivo de entrada. Aquel día las CLI procesaron también el CSV descargado de Alpaca (21.960 válidas, 0 inválidas), que no se versiona.
 
 ## CI
 
 `>>` Workflow: [.github/workflows/ci.yml](../../.github/workflows/ci.yml), adaptado de la plantilla del profesor. Se ejecuta en `push` a `main`, `pull_request` y manualmente, sobre Ubuntu con **Python 3.12**, instala `requirements.txt` y comprueba ambos paquetes con `--cov-fail-under=60`. Un fallo de tests o de cobertura hace fallar el job.
 
-`>>` Ejecuciones y evidencia: [GitHub Actions](https://github.com/dalonsoLabs/dsia-26-27-alonso-daniel/actions/workflows/ci.yml).
+`>>` Ejecuciones y evidencia: [GitHub Actions](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml).
 
-`=>` Run verde de la reorganización del **13 de octubre de 2026**: [38464158185](https://github.com/dalonsoLabs/dsia-26-27-alonso-daniel/actions/runs/38464158185), con **98 tests** y **99,25 % de cobertura** en Ubuntu / Python 3.12. Checklist de comprobaciones: [VERIFICACION.md](VERIFICACION.md).
+`=>` Último run verde de `main` (commit `ab75ded`, 23/11/2026): [45227267528](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45227267528), en Ubuntu / Python 3.12. Corresponde a `main` antes de las mejoras del 23/11 descritas en [AI_USAGE.md](AI_USAGE.md); las cifras vigentes de arriba son locales hasta que esas mejoras se integren y su run salga en verde.
+
+`>>` Run histórico de la reorganización del **13/10/2026**: [38464158185](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/38464158185), con 98 tests y 99,25 % de cobertura. Checklist de comprobaciones: [VERIFICACION.md](VERIFICACION.md).
 
 ## Uso de IA
 
@@ -196,6 +219,9 @@ pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-
 - `>` **13 octubre:** ejecutar ambos pipelines y verificar los tests y la cobertura.
 - `>>` **13 octubre:** comprobar los archivos generados y el workflow de GitHub Actions.
 - `=>` **13 octubre:** pipelines ejecutables, tests en verde y documentación en la carpeta de la entrega.
+- `~>` **23 noviembre:** auditoría de cumplimiento y mejoras, cada una en su propio commit: muestra sintética de B con su generador y test de integración, validadores más estrictos que conservan los valores originales en los rechazos, mensajes de fichero inexistente en el loader de B, `descargar_alpaca_actual.py` con argparse, AI_USAGE.md y cifras actualizadas (177 tests, 99,31 %).
+
+`>>` Cronología del historial, explicada sin reescribirlo: el 21 de septiembre se creó la carpeta inicial (`8d974d2`). El código de las Partes A y B se **integró en Git el 13 de octubre**, sin commits intermedios del trabajo anterior (la extracción de Alpaca es del 29 de septiembre), en commits separados pero muy seguidos (`f3ec78e` y `e1a1a9a`, con 20 segundos de diferencia), seguidos de la documentación, el CI y las correcciones de la revisión pública. El 23 de noviembre se añadieron los Proyectos II y III y una ampliación del I en commits también consecutivos (`41b505c`, `e524ec0`, `3d991d2`). Esas fechas son las reales de los commits y no se han modificado; desde el 23 de noviembre cada mejora va en un commit atómico.
 
 ### Perfil estadístico reproducible de la Parte B
 
