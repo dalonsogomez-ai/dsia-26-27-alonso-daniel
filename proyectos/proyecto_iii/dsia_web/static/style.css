@@ -104,7 +104,7 @@ button.primary { border: 0; background: var(--grad); color: #04121a; box-shadow:
 button.primary:hover { filter: brightness(1.08); }
 .analyze { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem 1rem; margin: .4rem 0 1rem; color: var(--muted); font-size: .8rem; }
 .analyze button { font-size: 1rem; }
-.answer { padding: 1rem 1.1rem; border: 1px solid rgba(46, 230, 197, .25); border-left: 3px solid var(--accent); border-radius: 12px; background: rgba(46, 230, 197, .06); animation: rise .35s ease both; }
+.answer { padding: 1rem 1.1rem; border: 1px solid rgba(46, 230, 197, .25); border-left: 3px solid var(--accent); border-radius: 12px; background: rgba(46, 230, 197, .06); }
 .answer p:first-child { margin-top: 0; font-size: 1.02rem; }
 .answer .note { margin-bottom: 0; font-size: .85rem; }
 code { padding: .08rem .35rem; border-radius: 6px; background: rgba(255, 255, 255, .06); color: var(--ink); font: .88em ui-monospace, SFMono-Regular, Menlo, monospace; }
