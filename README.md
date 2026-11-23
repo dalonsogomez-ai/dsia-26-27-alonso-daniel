@@ -87,6 +87,7 @@ PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh htt
 - `>>` [Proyecto I · AI_USAGE.md](proyectos/proyecto_i/AI_USAGE.md)
 - `>>` [Proyecto II · AI_USAGE.md](proyectos/proyecto_ii/AI_USAGE.md)
 - `>>` [Proyecto III · AI_USAGE.md](proyectos/proyecto_iii/AI_USAGE.md)
+- `>>` [Ficheros comunes (README, docs y CI) · docs/AI_USAGE.md](docs/AI_USAGE.md)
 
 ## Material y proyectos
 
