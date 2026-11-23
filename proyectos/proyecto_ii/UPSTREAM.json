@@ -1,0 +1,29 @@
+{
+  "repository": "https://github.com/dalonsogomez-ai/swarmtrader",
+  "commit": "5642dda71a1e50d55da3ad1206ec2ae1b891ac28",
+  "version": "1.4.0",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "src/swarmtrader/data/features.py",
+      "source_sha256": "03946bd60492b7cfba49f91c258ac44366584e083d87d0a428d58c62bb2eb570",
+      "local": "swarmtrade_app/_vendor/features.py",
+      "local_sha256": "03946bd60492b7cfba49f91c258ac44366584e083d87d0a428d58c62bb2eb570"
+    },
+    {
+      "source": "src/swarmtrader/agents/specialists.py",
+      "source_sha256": "1b3d3b36e96bf9bcea0e06a69f0aea8777e4f2c01159107bdbe27387bff759fa",
+      "local": "swarmtrade_app/_vendor/specialists.py",
+      "local_sha256": "1f75294b2583d93223b424d5aa37caf4eeaef335ca4efc5ccecaebc15702d668"
+    },
+    {
+      "source": "src/swarmtrader/portfolio/conviction.py",
+      "source_sha256": "8eb0f0996872a5efb71086077ebeb703904a6b74ad516bbc1d4644cf4bedd84b",
+      "local": "swarmtrade_app/_vendor/conviction.py",
+      "local_sha256": "8eb0f0996872a5efb71086077ebeb703904a6b74ad516bbc1d4644cf4bedd84b"
+    }
+  ],
+  "guard_sha256": "ce5186cc96671f4d6f1f18b3afc41d3b78c5b2d6d9e8a7e02ea682510eb7fe6e",
+  "verified_remote_main_utc": "2026-11-12",
+  "source_note": "La carpeta descargada se llama v1.3.0; su clon can\u00f3nico y el GitHub indicado coinciden en v1.4.0."
+}

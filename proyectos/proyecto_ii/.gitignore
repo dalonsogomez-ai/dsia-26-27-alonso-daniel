@@ -1,0 +1,20 @@
+# -> Datos, credenciales y artefactos regenerables permanecen locales.
+.venv/
+artifacts/
+runs/
+data/*
+!data/README.md
+*.joblib
+*.log
+.env
+.claude-flow/
+.env.*
+!.env.example
+.guard_state.json
+__pycache__/
+.pytest_cache/
+.coverage*
+htmlcov/
+ml_pipeline/data_profile.json
+ml_pipeline/inspection_summary.json
+ml_pipeline/figures/

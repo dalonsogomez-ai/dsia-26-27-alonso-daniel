@@ -1,0 +1,13 @@
+# -> Entorno de Proyecto II; requirements.txt fija las versiones comprobadas.
+numpy>=1.26,<3
+pandas>=2.2,<3
+scipy>=1.11,<2
+scikit-learn>=1.6,<2
+joblib>=1.4,<2
+huggingface_hub>=0.34,<2
+python-dotenv>=1,<2
+matplotlib>=3.8,<4
+marimo>=0.10,<1
+pytest>=8,<10
+pytest-cov>=6,<8
+alpaca-py>=0.43,<1
