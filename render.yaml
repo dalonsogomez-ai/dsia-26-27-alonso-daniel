@@ -1,12 +1,18 @@
 # Blueprint de Render para el Proyecto III. Refleja el servicio desplegado en
-# https://dsia-swarmtrader.onrender.com (Docker, región Frankfurt, plan free).
-# Usa la misma imagen que el job proyecto-iii-docker del CI: el snapshot demo se genera en el build.
+# https://dsia-swarmtrader.onrender.com (Docker, región Frankfurt, plan free, rama main).
+# Usa la misma imagen que el job proyecto-iii-docker del CI. En el build, `dsia_web.build auto`:
+#   - con el secret file `alpaca.env` (ALPACA_PAPER_API_KEY_ID y ALPACA_PAPER_API_SECRET_KEY)
+#     descarga barras diarias reales de Alpaca hasta ayer, reentrena y publica solo predicciones;
+#   - sin él, publica la demo sintética reproducible.
+# Los secret files no se declaran aquí: se crean en el panel (Environment → Secret Files).
+# Para refrescar los datos sin commit nuevo: Manual Deploy → Clear build cache & deploy.
 services:
   - type: web
     name: dsia-swarmtrader
     runtime: docker
     plan: free
     region: frankfurt
+    branch: main
     dockerfilePath: ./proyectos/proyecto_iii/Dockerfile
     dockerContext: .
     healthCheckPath: /health

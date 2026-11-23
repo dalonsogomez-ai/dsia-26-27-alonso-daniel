@@ -15,13 +15,24 @@ def test_runtime_requirements_are_a_subset_of_project_ii_pins():
     runtime = pins(ROOT / "proyectos/proyecto_iii/requirements-runtime.txt")
     shared = pins(ROOT / "proyectos/proyecto_ii/requirements.txt")
     # Arrange/Act: dependencias que el lote demo, la API y el cliente de IA necesitan en la imagen.
-    for needed in ("scikit-learn", "starlette", "uvicorn", "pydantic", "huggingface-hub", "pandas"):
+    for needed in ("scikit-learn", "starlette", "uvicorn", "pydantic", "huggingface-hub", "pandas", "alpaca-py"):
         assert needed in runtime, needed
     # Assert: ninguna versión nueva ni distinta respecto al entorno probado del II y el III.
     assert {name: version for name, version in runtime.items() if shared.get(name) != version} == {}
-    assert not {"marimo", "pytest", "pytest-cov", "alpaca-py"} & runtime.keys()
+    assert not {"marimo", "pytest", "pytest-cov"} & runtime.keys()
 
 
 def test_dockerfile_installs_the_runtime_requirements():
     dockerfile = (ROOT / "proyectos/proyecto_iii/Dockerfile").read_text()
     assert "pip install --no-cache-dir -r proyectos/proyecto_iii/requirements-runtime.txt" in dockerfile
+
+
+def test_alpaca_keys_reach_the_build_only_as_a_secret_mount():
+    dockerfile = (ROOT / "proyectos/proyecto_iii/Dockerfile").read_text()
+    dockerignore = (ROOT / ".dockerignore").read_text().split()
+    # Assert: secreto montado solo en el RUN del lote; nunca ARG/ENV con claves; fuera del contexto COPY.
+    assert dockerfile.startswith("# syntax=docker/dockerfile:1")
+    assert "--mount=type=secret,id=alpaca_env,uid=10001,required=false" in dockerfile
+    assert "build auto --secrets-file /run/secrets/alpaca_env" in dockerfile
+    assert not any(line.startswith(("ARG ALPACA", "ENV ALPACA")) for line in dockerfile.splitlines())
+    assert "alpaca.env" in dockerignore
