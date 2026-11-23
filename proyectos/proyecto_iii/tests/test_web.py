@@ -28,6 +28,19 @@ def test_pipeline_backend_and_dashboard(report):
         assert 'fetch("/api/v1/snapshot"' in client.get("/static/dashboard.js").text
 
 
+def test_dashboard_consumes_operation_and_analysis_endpoints_without_inline_code(report):
+    with TestClient(create_app(report[0])) as client:
+        script = client.get("/static/dashboard.js").text
+        page = client.get("/").text
+    for endpoint in ('"/health"', '"/api/v1/metrics"', '"/api/v1/pipeline?limit=12"', '"/api/v1/analyze"'):
+        assert endpoint in script
+    for anchor in ('id="ops"', 'id="ops-events"', 'id="inputs"', 'id="analyze-form"', 'role="alert"'):
+        assert anchor in page
+    # > La CSP default-src 'self' bloquearía cualquier script, estilo o manejador inline.
+    assert "<script>" not in page and "<style" not in page and " style=" not in page
+    assert " on" + "click=" not in page and " on" + "submit=" not in page
+
+
 @pytest.mark.parametrize("contents", [None, "{invalid", "{}"])
 def test_unavailable_is_visible_and_does_not_echo_disk_path(tmp_path, contents):
     path = tmp_path / "snapshot-privado.json"

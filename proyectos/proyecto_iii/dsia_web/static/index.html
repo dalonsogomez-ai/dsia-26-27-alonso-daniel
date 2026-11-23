@@ -23,6 +23,28 @@
       </div>
       <p id="status" class="status" role="status">Cargando informe…</p>
     </section>
+    <section id="ops" class="card ops" aria-labelledby="ops-title">
+      <div class="section-head">
+        <div><h2 id="ops-title">Operación</h2><p>Salud del servicio, métricas en memoria y último lote registrado</p></div>
+        <button id="ops-refresh" type="button">Actualizar</button>
+      </div>
+      <dl class="ops-facts">
+        <div><dt>Estado</dt><dd id="ops-status">Consultando…</dd></div>
+        <div><dt>run_id cargado</dt><dd id="ops-run" class="mono"></dd></div>
+        <div><dt>Último dato</dt><dd id="ops-as-of"></dd></div>
+        <div><dt>Antigüedad del informe</dt><dd id="ops-age"></dd></div>
+        <div><dt>Peticiones atendidas</dt><dd id="ops-requests"></dd></div>
+        <div><dt>Latencia media · p95</dt><dd id="ops-latency"></dd></div>
+      </dl>
+      <h3 class="subhead">Último lote</h3>
+      <p id="ops-pipeline-note" class="note"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Etapa</th><th scope="col">Estado</th><th scope="col">Duración</th><th scope="col">Hora UTC</th></tr></thead>
+          <tbody id="ops-events"></tbody>
+        </table>
+      </div>
+    </section>
     <div id="results" hidden>
       <section class="facts" aria-label="Resumen del informe">
         <div><span>Último dato</span><strong id="as-of"></strong></div>
@@ -55,6 +77,30 @@
           <p class="verdict">Ventaja económica sin demostrar</p>
         </section>
       </div>
+      <section class="card secondary" aria-labelledby="inputs-title">
+        <div class="section-head"><div><h2 id="inputs-title">Datos de entrada</h2><p>Resumen por símbolo de las barras hasta la fecha de corte</p></div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Símbolo</th><th scope="col">Sesiones</th><th scope="col">Último cierre</th><th scope="col">Retorno 21 sesiones</th><th scope="col">Volatilidad anual (63 s.)</th></tr></thead>
+            <tbody id="inputs"></tbody>
+          </table>
+        </div>
+        <p id="inputs-note" class="note"></p>
+      </section>
+      <section class="card secondary" aria-labelledby="analyze-title">
+        <h2 id="analyze-title">Explicar símbolo</h2>
+        <p class="note">Lanza un análisis bajo demanda con el cliente de IA del Proyecto II mediante <code>POST /api/v1/analyze</code>.</p>
+        <form id="analyze-form" class="analyze">
+          <label>Símbolo <select id="analyze-symbol" name="symbol" required></select></label>
+          <label>Clave de API, si el servicio la exige <input id="analyze-key" type="password" autocomplete="off"></label>
+          <button id="analyze-submit" type="submit">Explicar símbolo</button>
+        </form>
+        <div id="analyze-result" aria-live="polite" hidden>
+          <p id="analyze-summary"></p>
+          <p id="analyze-meta" class="note"></p>
+        </div>
+        <p id="analyze-error" class="error" role="alert" hidden></p>
+      </section>
       <details class="card secondary">
         <summary>Cortes temporales y purga de etiquetas</summary>
         <p class="note">La última etiqueta de cada bloque madura antes de comenzar el siguiente.</p>

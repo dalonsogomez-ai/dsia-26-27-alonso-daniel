@@ -1,6 +1,6 @@
 # Proyecto III · Aplicación de investigación SwarmTrader
 
-El dashboard muestra retornos estimados a 21 sesiones, un baseline y la procedencia de la inferencia. Consume el informe de la API con una petición HTTP real. El [diagrama](../../docs/ARQUITECTURA_DSIA.md) explica por qué el cálculo se ejecuta por lotes. La explicación de la demo usa el cliente `mock` del Proyecto II.
+El dashboard muestra retornos estimados a 21 sesiones, un baseline, los datos de entrada por símbolo y la procedencia de la inferencia. Consume el informe de la API con una petición HTTP real, lanza análisis bajo demanda con `POST /api/v1/analyze` y su panel **Operación** lee `/health`, `/api/v1/metrics` y `/api/v1/pipeline`. El [diagrama](../../docs/ARQUITECTURA_DSIA.md) explica por qué el cálculo se ejecuta por lotes. La explicación de la demo usa el cliente `mock` del Proyecto II.
 
 ## Despliegue reproducible
 

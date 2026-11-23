@@ -3,6 +3,7 @@
 const text = (id, value) => { document.getElementById(id).textContent = value; };
 const percent = new Intl.NumberFormat("es-ES", {style: "percent", maximumFractionDigits: 2});
 const decimal = new Intl.NumberFormat("es-ES", {minimumFractionDigits: 4, maximumFractionDigits: 4});
+const millis = new Intl.NumberFormat("es-ES", {minimumFractionDigits: 1, maximumFractionDigits: 1});
 const modelNames = {dummy: "Dummy", ridge: "Ridge", swarm: "Swarm sklearn"};
 const dataNames = {synthetic: "Simulación sintética", alpaca: "Histórico Alpaca", local: "Histórico local"};
 
@@ -75,8 +76,118 @@ function render(report) {
   const predictions = [...report.predictions].sort((a, b) => b.predicted_return - a.predicted_return);
   renderPredictions(predictions);
   document.getElementById("filter").addEventListener("input", () => renderPredictions(predictions));
+  renderInputs(report.input_summary);
+  const options = predictions.map(row => {
+    const option = element("option", row.symbol);
+    option.value = row.symbol;
+    return option;
+  });
+  document.getElementById("analyze-symbol").replaceChildren(...options);
   document.getElementById("results").hidden = false;
 }
+
+function renderInputs(summary) {
+  const price = new Intl.NumberFormat("es-ES", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const optional = (value, format) => value === null || value === undefined ? "—" : format.format(value);
+  const rows = (summary ?? []).map(item => {
+    const tr = element("tr");
+    const label = element("th", item.symbol);
+    label.scope = "row";
+    tr.append(label, element("td", String(item.sessions)), element("td", price.format(item.last_close)),
+      element("td", optional(item.return_21_sessions, percent)),
+      element("td", optional(item.volatility_annualized, percent)));
+    return tr;
+  });
+  document.getElementById("inputs").replaceChildren(...rows);
+  text("inputs-note", rows.length ? `${rows.length} símbolos · fuente: snapshot cargado`
+    : "Este informe no incluye resumen de datos de entrada.");
+}
+
+async function getJSON(url) {
+  const response = await fetch(url, {headers: {Accept: "application/json"}});
+  let body = null;
+  try { body = await response.json(); } catch (error) { body = null; }
+  return {ok: response.ok, status: response.status, body};
+}
+
+async function renderOperation() {
+  const [health, metrics, pipeline] = await Promise.all(
+    ["/health", "/api/v1/metrics", "/api/v1/pipeline?limit=12"].map(url => getJSON(url).catch(() => null)));
+  const checks = health?.body?.checks ?? {};
+  const ready = health?.ok && health.body.status === "ready";
+  const status = document.getElementById("ops-status");
+  status.textContent = ready ? "Operativo (200)" : `Sin informe válido (${health ? health.status : "sin respuesta"})`;
+  status.dataset.state = ready ? "ready" : "unavailable";
+  text("ops-run", health?.body?.run_id ?? "—");
+  text("ops-as-of", checks.as_of ?? "—");
+  text("ops-age", checks.snapshot_age_days === null || checks.snapshot_age_days === undefined
+    ? "—" : `${checks.snapshot_age_days} días`);
+  if (metrics?.ok) {
+    const latency = metrics.body.latency_ms;
+    text("ops-requests", String(metrics.body.requests_total));
+    text("ops-latency", latency.mean === null ? "—" : `${millis.format(latency.mean)} · ${millis.format(latency.p95)} ms`);
+  } else {
+    text("ops-requests", "—");
+    text("ops-latency", "—");
+  }
+  const events = pipeline?.ok ? pipeline.body.events : [];
+  const rows = events.map(event => {
+    const tr = element("tr");
+    const stage = element("th", event.stage);
+    stage.scope = "row";
+    tr.append(stage, element("td", event.status, event.status === "failed" ? "neg" : ""),
+      element("td", event.duration_ms === undefined ? "—" : `${millis.format(event.duration_ms)} ms`),
+      element("td", event.timestamp ? event.timestamp.slice(11, 19) : "—"));
+    return tr;
+  });
+  document.getElementById("ops-events").replaceChildren(...rows);
+  const note = document.getElementById("ops-pipeline-note");
+  if (pipeline?.ok) {
+    note.textContent = `${pipeline.body.returned} eventos · último run_id publicado: ${pipeline.body.last_run_id ?? "—"}`
+      + (pipeline.body.skipped_lines ? ` · ${pipeline.body.skipped_lines} líneas descartadas` : "");
+    note.dataset.runId = pipeline.body.last_run_id ?? "";
+  } else {
+    note.textContent = pipeline?.status === 404 ? "Journal no configurado (DSIA_JOURNAL)." : "Journal no disponible.";
+    note.dataset.runId = "";
+  }
+}
+
+async function analyze(event) {
+  event.preventDefault();
+  const button = document.getElementById("analyze-submit");
+  const result = document.getElementById("analyze-result");
+  const failure = document.getElementById("analyze-error");
+  const headers = {"Content-Type": "application/json", Accept: "application/json"};
+  const key = document.getElementById("analyze-key").value;
+  if (key) headers["X-API-Key"] = key;
+  button.disabled = true;
+  failure.hidden = true;
+  try {
+    const response = await fetch("/api/v1/analyze", {method: "POST", headers,
+      body: JSON.stringify({symbol: document.getElementById("analyze-symbol").value})});
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      result.hidden = true;
+      failure.textContent = `Error ${response.status}: ${body.detail?.message ?? "respuesta no válida"}`
+        + (body.request_id ? ` · request_id ${body.request_id}` : "");
+      failure.hidden = false;
+      return;
+    }
+    text("analyze-summary", body.summary);
+    text("analyze-meta", `${body.symbol} · ${body.provider} · ${body.model} · ${millis.format(body.latency_ms)} ms · request_id ${body.request_id}`);
+    result.hidden = false;
+  } catch (error) {
+    result.hidden = true;
+    failure.textContent = "Error de red: el servicio no respondió.";
+    failure.hidden = false;
+  } finally {
+    button.disabled = false;
+    renderOperation();
+  }
+}
+
+document.getElementById("analyze-form").addEventListener("submit", analyze);
+document.getElementById("ops-refresh").addEventListener("click", renderOperation);
 
 fetch("/api/v1/snapshot", {headers: {Accept: "application/json"}})
   .then(response => {
@@ -87,4 +198,5 @@ fetch("/api/v1/snapshot", {headers: {Accept: "application/json"}})
   .catch(() => {
     document.getElementById("status").dataset.error = "true";
     text("status", "Informe no disponible. Comprueba el estado del servicio.");
-  });
+  })
+  .finally(renderOperation);
