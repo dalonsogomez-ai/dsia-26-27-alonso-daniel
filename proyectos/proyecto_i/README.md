@@ -184,6 +184,10 @@ pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-
 
 `=>` Run verde de la reorganización del **13 de octubre de 2026**: [38464158185](https://github.com/dalonsoLabs/dsia-26-27-alonso-daniel/actions/runs/38464158185), con **98 tests** y **99,25 % de cobertura** en Ubuntu / Python 3.12. Checklist de comprobaciones: [VERIFICACION.md](VERIFICACION.md).
 
+## Uso de IA
+
+`>>` Registro completo en [AI_USAGE.md](AI_USAGE.md): OpenAI Codex (29/09 y 13/10/2026) y Claude Code con el modelo Claude Opus 5.5 (23/11/2026), con lo que se pidió, lo que se aceptó, lo que se rechazó y cómo se verificó.
+
 ## Desarrollo por fechas
 
 - `->` **21 septiembre:** preparar la arquitectura modular de `ventas_app` y documentar su diseño.
