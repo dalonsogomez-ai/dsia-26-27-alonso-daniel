@@ -14,12 +14,13 @@ from pathlib import Path
 from time import perf_counter_ns
 from typing import Iterator, TextIO
 
-from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest
+from swarmtrade_app.ai_client import AIClientError, AnalysisRequest
 from swarmtrade_app.data import DataError, generate_demo
 from swarmtrade_app.pipeline import infer
 from swarmtrade_app.preparation import prepare
 from swarmtrade_app.training import evaluate_holdout, train_prepared
 
+from .ai import client_from_env
 from .snapshot import Explanation, Metrics, Period, Prediction, Snapshot, create_snapshot
 
 LOG = logging.getLogger(__name__)
@@ -60,7 +61,10 @@ class RunJournal:
 
 
 def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
-    """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado."""
+    """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado.
+
+    El cliente de IA toma modelo, timeout y proveedor de inferencia del entorno (``HF_*``).
+    """
     report, artifact, _ = infer(data, run / "model.joblib")
     validation = artifact["report"]
     holdout = json.loads((run / "test_metrics.json").read_text())
@@ -70,7 +74,7 @@ def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
     if report["input_sha256"] != validation["metadata"]["data_sha256"]:
         raise DataError("La entrada no coincide con el dataset evaluado")
     try:
-        explanation = Explanation(**asdict(AIClient(provider=provider).analyze(summary)))
+        explanation = Explanation(**asdict(client_from_env(provider).analyze(summary)))
     except AIClientError:
         LOG.warning("Proveedor de explicación no disponible: %s", provider)
         explanation = None
@@ -129,7 +133,8 @@ def main(argv: list[str] | None = None) -> int:
     existing_parser = modes.add_parser("from-run")
     existing_parser.add_argument("--data", type=Path, required=True)
     existing_parser.add_argument("--run", type=Path, required=True)
-    existing_parser.add_argument("--provider", choices=("mock", "hf"), default="mock")
+    existing_parser.add_argument("--provider", choices=("mock", "hf"),
+                                 default=os.getenv("AI_PROVIDER", "mock"))
     for mode in (demo_parser, existing_parser):
         mode.add_argument("--output", type=Path, required=True)
         mode.add_argument("--journal", type=Path, help="Registro JSONL de etapas en un archivo nuevo")

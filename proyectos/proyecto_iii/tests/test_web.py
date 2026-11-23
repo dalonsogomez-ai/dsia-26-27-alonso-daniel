@@ -8,16 +8,6 @@ from dsia_web.build import main, write_snapshot
 from dsia_web.snapshot import read_snapshot
 
 
-@pytest.fixture(scope="module")
-def report(tmp_path_factory):
-    root = tmp_path_factory.mktemp("flow")
-    path = root / "snapshot.json"
-    journal = root / "pipeline.jsonl"
-    assert main(["demo", "--work", str(root / "work"), "--output", str(path),
-                 "--journal", str(journal)]) == 0
-    return path, read_snapshot(path)
-
-
 def test_pipeline_backend_and_dashboard(report):
     path, snapshot = report
     with TestClient(create_app(path)) as client:
