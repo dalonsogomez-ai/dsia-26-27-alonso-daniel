@@ -7,7 +7,8 @@ from dsia_web.app import create_app
 
 
 def fixed_clock(snapshot, days=3):
-    return lambda: snapshot.generated_at + timedelta(days=days, hours=1)
+    # -> Días exactos: con horas extra, un snapshot generado después de las 23:00 UTC cruzaría otro día.
+    return lambda: snapshot.generated_at + timedelta(days=days)
 
 
 def test_health_ready_reports_checks_without_paths(demo_run):

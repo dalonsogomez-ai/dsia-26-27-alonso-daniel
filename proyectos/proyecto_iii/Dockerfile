@@ -48,7 +48,10 @@ RUN --mount=type=secret,id=alpaca_env,uid=10001,required=false \
 EXPOSE 8000
 
 # ~> Sin curl en la imagen slim: la comprobación usa la biblioteca estándar. 503 => no sano.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
   CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8000'), timeout=4)"]
 
-CMD ["sh", "-c", "exec uvicorn dsia_web.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# >> Arranque: con credenciales de Alpaca en tiempo de ejecución (variables de entorno o
+#    /etc/secrets/alpaca.env) refresca el informe con datos hasta ayer si el del build es la demo
+#    o es de otro día; si falla, sirve el del build. Después lanza Uvicorn en ${PORT:-8000}.
+CMD ["python", "-m", "dsia_web.serve"]

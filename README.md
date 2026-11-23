@@ -10,6 +10,18 @@
 
 `>>` URL canónica: <https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel>. Es el repositorio que ejecuta el CI y el que se evalúa; la cuenta `dalonsoLabs` se renombró a `dalonsogomez-ai` y sus enlaces antiguos redirigen aquí.
 
+## Demo en vivo (Render)
+
+| Enlace | Qué muestra |
+| --- | --- |
+| [**dsia-swarmtrader.onrender.com**](https://dsia-swarmtrader.onrender.com) | Dashboard del Proyecto III: ranking de retornos estimados, evidencia del modelo, «Explicar símbolo» y panel de operación |
+| [`/health`](https://dsia-swarmtrader.onrender.com/health) | Estado del servicio y comprobaciones del snapshot |
+| [`/api/v1/snapshot`](https://dsia-swarmtrader.onrender.com/api/v1/snapshot) · [`/api/v1/snapshot/schema`](https://dsia-swarmtrader.onrender.com/api/v1/snapshot/schema) | Informe publicado y su contrato JSON Schema |
+| [`/api/v1/predictions/AAPL`](https://dsia-swarmtrader.onrender.com/api/v1/predictions/AAPL) | Predicción por símbolo |
+| [`/api/v1/metrics`](https://dsia-swarmtrader.onrender.com/api/v1/metrics) · [`/api/v1/pipeline`](https://dsia-swarmtrader.onrender.com/api/v1/pipeline) | Contadores y latencias del servicio, y eventos del último lote |
+
+`>>` Servicio Docker en Render (plan free, Frankfurt) que despliega `main` en cada commit. Al arrancar descarga barras diarias reales de Alpaca de 10 símbolos (AAPL, AMZN, GOOGL, JNJ, JPM, META, MSFT, NVDA, TSLA, XOM) hasta el día anterior, reentrena el modelo del II y publica solo predicciones y métricas: las condiciones de Alpaca no permiten redistribuir precios. Sin credenciales publica la demo sintética. La primera visita tras un rato sin tráfico tarda unos 50 s. Detalles en el [README del III](proyectos/proyecto_iii/README.md#empaquetado-y-despliegue).
+
 ## Proyectos
 
 | Proyecto | Qué hace | Guía |
