@@ -13,7 +13,7 @@ El tag anotado se crea en un paso aparte, sobre el commit con CI verde, y se enl
 | API | `/health` con `checks`; `GET /api/v1/predictions/{symbol}`; `POST /api/v1/analyze` con el `AIClient` del II, 503 tipado y `X-API-Key` opcional; `GET /api/v1/pipeline`; `GET /api/v1/metrics`; `X-Request-ID`, `latency_ms` en logs y cabeceras CSP, nosniff y no-referrer |
 | Lote | IA configurada por `AI_PROVIDER` y `HF_*`; etapa `validate_input` en `from-run`; `input_summary` por símbolo en el snapshot |
 | Dashboard | Paneles Operación, Datos de entrada y Explicar símbolo, sin código inline |
-| Empaquetado | [`Dockerfile`](Dockerfile), [`render.yaml`](../../render.yaml), [`Procfile`](../../Procfile), [`.python-version`](../../.python-version) y [`requirements-e2e.txt`](requirements-e2e.txt). Sin URL pública: el despliegue lo hace el autor con su cuenta |
+| Empaquetado | [`Dockerfile`](Dockerfile), [`render.yaml`](../../render.yaml), [`Procfile`](../../Procfile), [`.python-version`](../../.python-version) y [`requirements-e2e.txt`](requirements-e2e.txt). Desplegado en Render: [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com) |
 | Evidencia | [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json): agregados del `from-run` con el histórico Alpaca, sin precios ni predicciones por símbolo |
 
 Comprobación antes de etiquetar: pytest del III con cobertura, `smoke_test.sh` contra Uvicorn local y contra el contenedor, y `browser_smoke.py --expect-pipeline`.
@@ -21,7 +21,7 @@ Comprobación antes de etiquetar: pytest del III con cobertura, `smoke_test.sh` 
 ## Rollback
 
 1. **Datos (snapshot).** Conserva el snapshot anterior. Si el nuevo no supera `smoke_test.sh`, apunta `DSIA_SNAPSHOT` al anterior y reinicia; un snapshot inválido deja `/health` en 503 y no se sirve.
-2. **Código (tag).** Vuelve al tag anterior y redepliega ese commit: `git checkout <tag-anterior>` y `docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii:<tag-anterior> .`, o en Render «Manual Deploy» del commit del tag (`autoDeploy` está desactivado). Antes del primer tag, la referencia es el commit `ab75ded` de la RC1 en main. Tras el rollback, repetir `smoke_test.sh` contra la URL o el contenedor.
+2. **Código (tag).** Vuelve al tag anterior y redepliega ese commit: `git checkout <tag-anterior>` y `docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii:<tag-anterior> .`, o en Render *Rollback* al deploy anterior desde la pestaña *Deploys* (con `autoDeploy` activo, desactívalo antes para que un commit nuevo no lo pise) o «Manual Deploy» del commit del tag. Antes del primer tag, la referencia es el commit `ab75ded` de la RC1 en main. Tras el rollback, repetir `smoke_test.sh` contra la URL o el contenedor.
 
 ## Hallazgos corregidos durante la revisión
 
@@ -45,4 +45,4 @@ Si el navegador de la exposición falla, ejecutar el smoke por terminal y usar l
 
 ## Alcance de esta versión
 
-La demo de CI usa datos sintéticos y explicación mock. La integración con un histórico Alpaca se verificó en local con el run congelado y su resumen agregado, sin precios ni predicciones, está versionado en [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json) (`run_id` `b2553cbc…6169211`, holdout RMSE 0,0919). El servicio se entrega empaquetado (imagen Docker verificada en local y blueprint de Render) sin URL pública todavía. La llamada autenticada a HF y la exposición oral siguen pendientes de sus contextos de ejecución. La cronología verificable de la adaptación del II figura en [la auditoría](../../docs/TRAZABILIDAD_DSIA.md).
+La demo de CI usa datos sintéticos y explicación mock. La integración con un histórico Alpaca se verificó en local con el run congelado y su resumen agregado, sin precios ni predicciones, está versionado en [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json) (`run_id` `b2553cbc…6169211`, holdout RMSE 0,0919). El servicio se entrega empaquetado (imagen Docker verificada en local) y desplegado en Render en [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com). La llamada autenticada a HF y la exposición oral siguen pendientes de sus contextos de ejecución. La cronología verificable de la adaptación del II figura en [la auditoría](../../docs/TRAZABILIDAD_DSIA.md).

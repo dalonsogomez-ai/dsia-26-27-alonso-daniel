@@ -68,7 +68,7 @@ docker run --rm -p 8790:8000 dsia-iii
 PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8790
 ```
 
-`=>` La receta completa del II (inspección, entrenamiento, evaluación, inferencia y Hugging Face) está en su [README](proyectos/proyecto_ii/README.md#-reproducir-sin-claves-ni-datos-de-terceros); la del III (prueba de navegador, Render, Procfile y rollback), en el suyo. Todavía no hay URL pública: el despliegue en Render lo hace el autor con su cuenta.
+`=>` La receta completa del II (inspección, entrenamiento, evaluación, inferencia y Hugging Face) está en su [README](proyectos/proyecto_ii/README.md#-reproducir-sin-claves-ni-datos-de-terceros); la del III (prueba de navegador, Render, Procfile y rollback), en el suyo. Despliegue público en Render: **[https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com)** (dashboard) · [`/health`](https://dsia-swarmtrader.onrender.com/health) · imagen Docker del III, plan free (la primera petición tras un periodo de inactividad tarda ~50 s).
 
 ## CI
 
