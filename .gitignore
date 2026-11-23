@@ -30,3 +30,15 @@ build/
 
 # >> Salida regenerable de la práctica de pandas.
 1_programacion_avanzada_python/Datos/ventas_limpias.csv
+
+# Datos de proveedores, estados y artefactos regenerables.
+.venv-*/
+**/runs/
+**/data/raw/*
+!**/data/raw/.gitignore
+**/data/processed/*
+!**/data/processed/.gitignore
+*.joblib
+.coverage.*
+.claude-flow/
+__marimo__/

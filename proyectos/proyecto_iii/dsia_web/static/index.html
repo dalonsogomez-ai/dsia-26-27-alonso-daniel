@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SwarmTrader · Laboratorio DSIA</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/dashboard.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div class="brand"><span class="mark" aria-hidden="true">↗</span> SwarmTrader <span class="course">DSIA</span></div>
+      <a href="/api/v1/snapshot">Informe JSON ↗</a>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <p class="eyebrow">Laboratorio de investigación bursátil</p>
+        <h1 id="title">Predicción de retorno<br>a 21 sesiones</h1>
+        <p class="intro">Explora la salida del modelo y comprueba su rendimiento frente al baseline.</p>
+      </div>
+      <p id="status" class="status" role="status">Cargando informe…</p>
+    </section>
+    <div id="results" hidden>
+      <section class="facts" aria-label="Resumen del informe">
+        <div><span>Último dato</span><strong id="as-of"></strong></div>
+        <div><span>Modelo seleccionado</span><strong id="model"></strong></div>
+        <div><span>Universo</span><strong id="universe"></strong></div>
+        <div><span>RMSE del holdout</span><strong id="rmse"></strong></div>
+      </section>
+      <div class="grid">
+        <section class="card" aria-labelledby="rank-title">
+          <div class="section-head">
+            <div><h2 id="rank-title">Retornos estimados</h2><p>Ordenados por retorno predicho</p></div>
+            <label class="search">Filtrar símbolo <input id="filter" type="search"></label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Símbolo</th><th scope="col">Retorno estimado</th><th scope="col">Distribución</th></tr></thead>
+              <tbody id="predictions"></tbody>
+            </table>
+          </div>
+          <p id="count" class="note" aria-live="polite"></p>
+        </section>
+        <section class="card evidence" aria-labelledby="evidence-title">
+          <div class="section-head"><div><h2 id="evidence-title">Evidencia del modelo</h2><p>Validation · RMSE menor es mejor</p></div></div>
+          <ul id="validation" class="metrics"></ul>
+          <dl class="eval">
+            <div><dt>MAE holdout</dt><dd id="mae"></dd></div>
+            <div><dt>R² holdout</dt><dd id="r2"></dd></div>
+            <div><dt>Evaluaciones del holdout</dt><dd id="touches"></dd></div>
+          </dl>
+          <p class="verdict">Ventaja económica sin demostrar</p>
+        </section>
+      </div>
+      <details class="card secondary">
+        <summary>Cortes temporales y purga de etiquetas</summary>
+        <p class="note">La última etiqueta de cada bloque madura antes de comenzar el siguiente.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Bloque</th><th scope="col">Primera señal</th><th scope="col">Última señal</th><th scope="col">Última etiqueta</th><th scope="col">Filas</th></tr></thead>
+            <tbody id="splits"></tbody>
+          </table>
+        </div>
+      </details>
+      <section class="card secondary" aria-labelledby="explanation-title">
+        <h2 id="explanation-title">Explicación del informe</h2>
+        <p id="explanation-source" class="note"></p>
+        <p id="explanation"></p>
+      </section>
+      <details class="card secondary">
+        <summary>Procedencia del informe</summary>
+        <dl class="provenance">
+          <dt>Identificador</dt><dd id="run"></dd>
+          <dt>Datos · SHA-256</dt><dd id="input-hash"></dd>
+          <dt>Modelo · SHA-256</dt><dd id="artifact-hash"></dd>
+          <dt>Versión sklearn</dt><dd id="sklearn"></dd>
+          <dt>Generado el</dt><dd id="generated"></dd>
+        </dl>
+        <a href="/api/v1/snapshot/schema">Ver contrato JSON Schema ↗</a>
+      </details>
+    </div>
+  </main>
+</body>
+</html>

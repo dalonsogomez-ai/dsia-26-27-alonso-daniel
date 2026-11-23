@@ -1,37 +1,83 @@
-# ~> Adaptación de la plantilla del profesor para ejecutar ambas partes desde su carpeta.
-name: proyecto-i-ci
-
+name: DSIA · Proyectos I, II y III
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/proyecto-dsia']
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: proyectos/proyecto_i
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  MPLBACKEND: Agg
 
 jobs:
-  test:
+  proyecto-i:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proyectos/proyecto_i
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.12"
-      - name: Install dependencies
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: proyectos/proyecto_i/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-under=60
+
+  proyectos-ii-y-iii:
+    runs-on: ubuntu-latest
+    # Limit the dependency install and the browser check as well as the tests.
+    timeout-minutes: 15
+    env:
+      AI_PROVIDER: mock
+      HF_TOKEN: ''
+      ALPACA_PAPER_API_KEY_ID: ''
+      ALPACA_PAPER_API_SECRET_KEY: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: proyectos/proyecto_ii/requirements.txt
+      - run: python -m pip install -r proyectos/proyecto_ii/requirements.txt playwright==1.65.2
+      - name: Proyecto II · pruebas offline y revisión de notebooks
+        working-directory: proyectos/proyecto_ii
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-      - name: Unit and integration tests + coverage gate (60%)
+          python -m pytest -q --cov=swarmtrade_app --cov-report=term-missing
+          python -m marimo check ml_pipeline/01_eda.py ml_pipeline/02_prep.py ml_pipeline/03_model.py ml_pipeline/04_eval.py
+      - name: Proyecto III · pipeline y contrato HTTP
+        env:
+          PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
+        run: python -m pytest -q --cov=dsia_web --cov-report=term-missing proyectos/proyecto_iii/tests/test_web.py
+      - name: Proyecto III · navegador contra backend real
+        env:
+          PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
         run: |
-          python -m pytest -q \
-            --cov=ventas_app \
-            --cov=acciones_app \
-            --cov-report=term-missing \
-            --cov-fail-under=60
+          python -m playwright install --with-deps chromium --only-shell
+          python -m dsia_web.build demo --work runs/dsia-demo/work --output runs/dsia-demo/snapshot.json
+          python -m uvicorn dsia_web.app:app --host 127.0.0.1 --port 8765 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/health; then break; fi
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          mkdir -p runs/dsia-evidence
+          python proyectos/proyecto_iii/tests/browser_smoke.py http://127.0.0.1:8765/ --screenshot runs/dsia-evidence/dashboard.png
+      - name: Evidencia del dashboard sintético
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dsia-dashboard-sintetico
+          path: runs/dsia-evidence/dashboard.png
+          if-no-files-found: error
+          retention-days: 30

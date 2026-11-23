@@ -1,5 +1,7 @@
 # README Desarrollo Soluciones de IA
 
+**Entrega I, II y III.** Consulta la [guía de arranque, arquitectura y rúbricas](README_DSIA.md).
+
 ## Repositorio propio de la asignatura de DSIA.
 
 ### Daniel Alonso Gomez
