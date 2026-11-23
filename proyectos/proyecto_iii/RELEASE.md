@@ -1,12 +1,12 @@
 # Release Candidate del Proyecto III
 
-- Versión de la entrega **RC1 · 23 de noviembre de 2026**, etiquetada como **`v0.9.0-rc1`**.
-- Contrato del snapshot **1**, con el campo opcional `input_summary` compatible hacia atrás. Se verifica el commit concreto en [GitHub Actions en main](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml?query=branch%3Amain).
-- Preparación de la demo y recuperación en el [README](README.md#arranque-local-de-api-y-dashboard).
+- `->` Versión de la entrega **RC1 · 23 de noviembre de 2026**, fecha de Release Candidate del enunciado, etiquetada como **`v0.9.0-rc1`**.
+- `>>` Contrato del snapshot **1**, con el campo opcional `input_summary` compatible hacia atrás. Cada commit se verifica en [GitHub Actions en main](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml?query=branch%3Amain).
+- `>>` Arranque, despliegue y guion de la exposición en el [README](README.md#arranque-local-de-api-y-dashboard).
 
 ## v0.9.0-rc1
 
-Tag anotado [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1), creado el 23/11/2026 sobre `0119c57` de `main` (PR #1 integrado, CI verde en el run [45271855953](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271855953)) y desplegado en https://dsia-swarmtrader.onrender.com.
+`=>` Tag anotado [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1), creado el 23/11/2026 sobre `0119c57` de `main` (PR #1 integrado, CI verde en el run [45271855953](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271855953)) y desplegado en [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com).
 
 | Ámbito | Contenido |
 | --- | --- |
@@ -16,12 +16,24 @@ Tag anotado [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-
 | Empaquetado | [`Dockerfile`](Dockerfile), [`render.yaml`](../../render.yaml), [`Procfile`](../../Procfile), [`.python-version`](../../.python-version) y [`requirements-e2e.txt`](requirements-e2e.txt). Desplegado en Render: [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com) |
 | Evidencia | [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json): agregados del `from-run` con el histórico Alpaca, sin precios ni predicciones por símbolo |
 
-Comprobación antes de etiquetar: pytest del III con cobertura, `smoke_test.sh` contra Uvicorn local y contra el contenedor, y `browser_smoke.py --expect-pipeline`.
+`>>` Comprobación antes de etiquetar: pytest del III con cobertura, `smoke_test.sh` contra Uvicorn local y contra el contenedor, y `browser_smoke.py --expect-pipeline`.
+
+## Cambios en main después de la RC
+
+`~>` Entre el 23 y el 24 de noviembre, el despliegue pasó de la demo sintética a **datos reales de Alpaca**, sin cambiar el contrato del snapshot:
+
+| Cambio | Commits | Comprobación |
+| --- | --- | --- |
+| Modos `alpaca` y `auto` del lote, descarga con `alpaca-py` y secret file en el build | [PR #2](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/2) (`bed8312`) | Descarga simulada en pytest; build con claves falsas que falla sin filtrar nada |
+| Refresco al arrancar con las claves como variables de entorno ([`serve.py`](dsia_web/serve.py)) | [PR #3](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/3) (`033d134`) | En Render: `data_kind: alpaca`, 10 símbolos, 22 350 filas, último dato 2026-11-20 |
+| Respuesta del análisis sin animación de entrada y captura nueva del despliegue | `e807373`, `bd3b0fa` | [Captura](evidencia/dashboard_render.png) con Playwright contra la URL pública |
+
+`=>` `main` en `bd3b0fa` con el run [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693) en verde: III con **123 tests y 97,22 %** de cobertura, smoke y Playwright contra Uvicorn, y smoke contra el contenedor. El informe público con datos reales solo publica predicciones y métricas, porque Alpaca no permite redistribuir sus datos.
 
 ## Rollback
 
-1. **Datos (snapshot).** Conserva el snapshot anterior. Si el nuevo no supera `smoke_test.sh`, apunta `DSIA_SNAPSHOT` al anterior y reinicia; un snapshot inválido deja `/health` en 503 y no se sirve.
-2. **Código (tag).** Vuelve al tag anterior y redepliega ese commit: `git checkout <tag-anterior>` y `docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii:<tag-anterior> .`, o en Render *Rollback* al deploy anterior desde la pestaña *Deploys* (con `autoDeploy` activo, desactívalo antes para que un commit nuevo no lo pise) o «Manual Deploy» del commit del tag. Antes del primer tag, la referencia es el merge `a5a5b9b` del PR #1 en `main` (o `ab75ded`, la versión anterior). Tras el rollback, repetir `smoke_test.sh` contra la URL o el contenedor.
+1. `>` **Datos (snapshot).** Conserva el snapshot anterior. Si el nuevo no supera `smoke_test.sh`, apunta `DSIA_SNAPSHOT` al anterior y reinicia; un snapshot inválido deja `/health` en 503 y no se sirve. En Render, si falla la descarga al arrancar, `serve.py` sirve el informe de la imagen.
+2. `>` **Código (tag).** Vuelve al tag anterior y redepliega ese commit: `git checkout <tag-anterior>` y `docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii:<tag-anterior> .`, o en Render *Rollback* al deploy anterior desde la pestaña *Deploys* (con el auto-deploy activo, desactívalo antes para que un commit nuevo no lo pise) o *Manual Deploy* del commit del tag. La referencia anterior a la RC es el merge `a5a5b9b` del PR #1. Tras el rollback, repetir `smoke_test.sh` contra la URL o el contenedor.
 
 ## Hallazgos corregidos durante la revisión
 
@@ -31,18 +43,14 @@ Comprobación antes de etiquetar: pytest del III con cobertura, `smoke_test.sh` 
 | Un exit code indicaba el fallo del lote sin señalar la etapa alcanzada | El journal guarda el inicio y resultado por etapa. pytest fuerza un fallo y verifica que se conserva la evidencia y no aparece un snapshot parcial |
 | Había que comparar manualmente el resultado visible y el publicado | El smoke HTTP verifica salud, fecha e informe. La prueba Chromium comprueba además que el journal y la web corresponden al mismo `run_id` |
 | Auditoría del 23/11: sin análisis desde la web, sin panel de operación, sin cabeceras de seguridad ni empaquetado | Endpoints `analyze`, `predictions`, `pipeline` y `metrics`, panel Operación, middleware de seguridad y trazas, Dockerfile y blueprint. Cada uno con pruebas que se pusieron en rojo al romper el código |
+| La prueba de `/health` fallaba después de las 23:00 UTC por la antigüedad en días | Reloj fijado a días exactos en la prueba (`5410155`) |
 
-## Guion de defensa · 6 minutos
+## Exposición
 
-1. **0:00–1:00.** Explicar usuario, alcance del ranking y horizonte de 21 sesiones. Identificar el carácter sintético de la demo y enseñar la [evidencia agregada del histórico Alpaca](evidencia/historico_alpaca.json).
-2. **1:00–2:00.** Abrir el [diagrama Excalidraw](../../docs/ARQUITECTURA_DSIA.md#proyecto-iii--lote-y-servicio-http). Señalar el artefacto congelado del II y la generación del snapshot antes de arrancar Uvicorn.
-3. **2:00–3:00.** Panel **Operación**: estado, `run_id`, antigüedad, contadores de `/api/v1/metrics` y eventos de `/api/v1/pipeline`. Comparar el `run_id` con `/health` y con el último evento del journal.
-4. **3:00–4:30.** Aplicar un filtro, recorrer **Datos de entrada** y enseñar en la red del navegador `/api/v1/snapshot`. Pulsar **Explicar símbolo** y mostrar el `POST /api/v1/analyze` con `request_id` y latencia.
-5. **4:30–5:15.** Comparar Dummy, Ridge y Swarm en validation. Explicar la purga temporal, el holdout de un toque y el R² negativo.
-6. **5:15–6:00.** Enseñar CI, el artefacto y `docker run` con su `HEALTHCHECK`. Explicar el 503 cuando falta el snapshot o cae la IA y los dos rollbacks. Abrir el [registro de IA](AI_USAGE.md) para preguntas.
+`->` El guion de 5–7 minutos, con la demo sobre [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com), está en el [README del III](README.md#guion-de-la-exposición). Abrir la URL unos minutos antes: el plan gratuito duerme la instancia y el arranque incluye el refresco de Alpaca.
 
-Si el navegador de la exposición falla, ejecutar el smoke por terminal y usar la captura de la última ejecución verde como referencia visual. La evidencia de integración está en la prueba de navegador del mismo run de Actions.
+`~>` **Contingencia.** Si Render no responde, arrancar la demo local, pasar `smoke_test.sh` por terminal y usar como referencia visual la [captura del despliegue](evidencia/dashboard_render.png) y el artefacto `dsia-dashboard-sintetico` del run 45288524693.
 
 ## Alcance de esta versión
 
-La demo de CI usa datos sintéticos y explicación mock. La integración con un histórico Alpaca se verificó en local con el run congelado y su resumen agregado, sin precios ni predicciones, está versionado en [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json) (`run_id` `b2553cbc…6169211`, holdout RMSE 0,0919). El servicio se entrega empaquetado (imagen Docker verificada en local) y desplegado en Render en [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com). La llamada autenticada a HF y la exposición oral siguen pendientes de sus contextos de ejecución. La cronología verificable de la adaptación del II figura en [la auditoría](../../docs/TRAZABILIDAD_DSIA.md).
+`=>` Entregado: lote, API, dashboard con panel de operación, CI con Playwright y Docker, y despliegue público en Render con datos reales de Alpaca hasta la última sesión cerrada. Depende del autor: la llamada autenticada a Hugging Face (el despliegue usa `mock`, alternativa admitida por el enunciado del II) y la exposición del 30/11/2026. La cronología verificable está en el [README](README.md#desarrollo-por-fechas) y en la [trazabilidad](../../docs/TRAZABILIDAD_DSIA.md).
