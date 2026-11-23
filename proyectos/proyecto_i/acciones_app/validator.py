@@ -50,11 +50,14 @@ def validate_bars(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         & bars["high"].ge(bars["low"]) & bars["low"].le(bars["open"])
         & bars["low"].le(bars["close"])
     )
-    rules["símbolo y fecha duplicados"] = ~bars.duplicated(["symbol", "timestamp"], keep=False)
+    # -> Una fecha inválida (NaT) no forma clave: ya se rechaza por "fecha inválida".
+    rules["símbolo y fecha duplicados"] = (
+        ~bars.duplicated(["symbol", "timestamp"], keep=False) | bars["timestamp"].isna()
+    )
     checks = pd.DataFrame(rules, index=bars.index).fillna(False)
     mask = checks.all(axis=1)
     _warn_vwap_outside_range(bars.loc[mask])
-    valid =bars.loc[mask].sort_values(["symbol", "timestamp"]).reset_index(drop=True)
+    valid = bars.loc[mask].sort_values(["symbol", "timestamp"]).reset_index(drop=True)
     # => Los rechazos se exportan con los valores recibidos, no con los convertidos.
     invalid = original.loc[~mask].copy()
     invalid["motivo"] = checks.loc[~mask].apply(

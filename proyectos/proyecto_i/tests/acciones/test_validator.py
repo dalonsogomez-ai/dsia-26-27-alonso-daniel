@@ -82,6 +82,20 @@ def test_all_duplicate_members_are_rejected(bars_frame):
     assert invalid["motivo"].str.contains("duplicados").all()
 
 
+def test_distinct_invalid_dates_are_not_reported_as_duplicates(bars_frame):
+    # Arrange: dos barras del mismo símbolo con fechas inválidas distintas (ambas quedan en NaT).
+    frame = bars_frame.iloc[:2].copy().astype({"timestamp": "object"})
+    frame.loc[0, "timestamp"] = "2026-02-30"
+    frame.loc[1, "timestamp"] = "mal"
+
+    # Act
+    valid, invalid = validate_bars(frame)
+
+    # Assert: el único motivo es la fecha; no son duplicados.
+    assert valid.empty and len(invalid) == 2
+    assert invalid["motivo"].tolist() == ["fecha inválida", "fecha inválida"]
+
+
 def test_symbol_normalization(bars_frame):
     frame = bars_frame.iloc[:1].copy()
     frame.loc[0, "symbol"] = " aaa "
