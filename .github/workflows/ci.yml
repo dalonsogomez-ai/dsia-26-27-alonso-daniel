@@ -75,7 +75,7 @@ jobs:
         run: |
           smoke="$RUNNER_TEMP/ii-smoke"
           python -m swarmtrade_app demo-data --output "$smoke/demo.csv" --sessions 680 --symbols 8 --seed 42
-          echo "484397d268b328060950b00804c075acd8b8241165c60fb9c8119fd6e920f2f0  $smoke/demo.csv" | sha256sum -c -
+          echo "c0574a8505d4329a8db523513d2f9f7bdbbb1599dd7568e4866d3b5ae1abf4c2  $smoke/demo.csv" | sha256sum -c -
           python -m swarmtrade_app train --data "$smoke/demo.csv" --run "$smoke/run" --data-kind synthetic
           python -m swarmtrade_app evaluate --run "$smoke/run"
           python -m swarmtrade_app run --data "$smoke/demo.csv" --artifact "$smoke/run/model.joblib" --output "$smoke/run/report.json" --provider mock

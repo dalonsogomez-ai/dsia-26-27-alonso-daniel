@@ -31,4 +31,4 @@
 - `->` Se pidió repetir la verificación del II en un clon limpio y corregir los hallazgos.
 - `~>` Aceptado: `evaluate` sin `model.joblib` da un error de dominio en español en lugar del `OSError` crudo, y un segundo `evaluate` traduce el aviso del guard vendorizado, que estaba pensado para un agente (`f9c9890`); el comando de la demo de `data/README.md` usa los mismos parámetros que la receta y el sha256 del CI (`dc7d11f`).
 - `=>` No adoptado: convertir el aviso del guard en `DataError` dentro de la librería; se mantiene `TestSetAlreadyUsed` porque las pruebas del holdout dependen de él y la traducción pertenece al borde de la CLI.
-- `>>` Verificación: los dos tests nuevos fallaron antes del cambio; `pytest` del II → 73 passed, 83 % de cobertura; `marimo check` de los cuatro notebooks sin avisos.
+- `>>` Verificación: los dos tests nuevos fallaron antes del cambio; `pytest` del II → 74 passed, 83 % de cobertura (incluye la precisión fija de la demo, `484397d2…` → `c0574a85…`, detectada por el primer run del CI en Linux); `marimo check` de los cuatro notebooks sin avisos.

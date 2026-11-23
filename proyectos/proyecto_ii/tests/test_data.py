@@ -87,3 +87,11 @@ def test_reject_ohlc_mismatch(bars_file):
     frame.to_csv(bars_file, index=False)
     with pytest.raises(DataError, match='OHLC'):
         load_bars(bars_file)
+
+
+def test_demo_prices_have_fixed_precision_for_cross_platform_bytes(tmp_path):
+    # Arrange/Act: np.exp puede diferir en el último ULP entre arquitecturas (SIMD de x86 y ARM).
+    path = generate_demo(tmp_path / "demo.csv", sessions=450, symbols=5, seed=42)
+    closes = pd.read_csv(path, dtype={"close": str})["close"]
+    # Assert: con 6 decimales como máximo el CSV es idéntico byte a byte en macOS y Linux.
+    assert closes.str.split(".").str[1].str.len().max() <= 6
