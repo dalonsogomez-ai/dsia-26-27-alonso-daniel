@@ -1,0 +1,3 @@
+# -> Dependencias para la prueba de navegador (tests/browser_smoke.py) además de las del II.
+-r ../proyecto_ii/requirements.txt
+playwright==1.65.2

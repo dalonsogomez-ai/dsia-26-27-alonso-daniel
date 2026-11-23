@@ -1,0 +1,29 @@
+# Blueprint de Render para el Proyecto III. No hay despliegue público activo: lo crea el autor con su cuenta.
+services:
+  - type: web
+    name: dsia-swarmtrader
+    runtime: python
+    plan: free
+    autoDeploy: false
+    buildCommand: >-
+      pip install --no-cache-dir -r proyectos/proyecto_ii/requirements.txt &&
+      python -m dsia_web.build demo --work runs/dsia-demo/work
+      --output runs/dsia-demo/snapshot.json --journal runs/dsia-evidence/pipeline.jsonl
+    startCommand: uvicorn dsia_web.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONPATH
+        value: proyectos/proyecto_ii:proyectos/proyecto_iii
+      - key: AI_PROVIDER
+        value: mock
+      - key: MPLBACKEND
+        value: Agg
+      - key: DSIA_SNAPSHOT
+        value: runs/dsia-demo/snapshot.json
+      - key: DSIA_JOURNAL
+        value: runs/dsia-evidence/pipeline.jsonl
+      # Opcionales y secretos: se introducen en el panel de Render, nunca en el repositorio.
+      - key: DSIA_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false

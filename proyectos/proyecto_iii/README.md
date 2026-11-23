@@ -30,6 +30,23 @@ Ejecuta desde la raíz del repositorio.
 
 El [workflow](../../.github/workflows/ci.yml) instala las dependencias en Linux, genera otro snapshot desde cero y verifica la API y el dashboard con Chromium. El artefacto `dsia-dashboard-sintetico` del run contiene `dashboard.png` y `pipeline.jsonl`. El navegador verifica que la publicación registrada, la API y la pantalla muestren el mismo `run_id`.
 
+## Empaquetado y despliegue
+
+> No hay URL pública desplegada todavía. El despliegue lo hace el autor con su propia cuenta; el repositorio deja listos la imagen y el blueprint, verificados en local.
+
+- **Modo producción sin contenedor.** Escucha en todas las interfaces y en el puerto que asigne la plataforma: `uvicorn dsia_web.app:app --host 0.0.0.0 --port "$PORT"`. En local usa siempre `--host 127.0.0.1`.
+- **Docker.** El contexto es la raíz del repositorio y [`.dockerignore`](../../.dockerignore) deja fuera `.git`, entornos, `runs`, `data/raw`, `.env*` y el resto de asignaturas. La [imagen](Dockerfile) parte de `python:3.12-slim`, instala `proyectos/proyecto_ii/requirements.txt` sin caché, genera el snapshot demo sintético durante el build, corre con un usuario sin privilegios (uid 10001) y declara un `HEALTHCHECK` contra `/health` hecho con Python.
+
+  ```bash
+  docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .
+  docker run --rm -p 8790:8000 dsia-iii        # -e PORT=9000 cambia el puerto interno
+  PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8790
+  ```
+
+- **Render.** [`render.yaml`](../../render.yaml) instala dependencias y genera el snapshot en `buildCommand`, arranca Uvicorn con `$PORT` y usa `healthCheckPath: /health`. Fija `AI_PROVIDER=mock`, `PYTHONPATH`, `DSIA_SNAPSHOT` y `DSIA_JOURNAL`; `HF_TOKEN` y `DSIA_API_KEY` se introducen en el panel (`sync: false`). [`.python-version`](../../.python-version) fija Python 3.12.
+- **Procfile.** [`Procfile`](../../Procfile) sirve para plataformas tipo Heroku: genera el snapshot demo si falta y arranca Uvicorn en `$PORT`.
+- **Clave opcional.** Con `DSIA_API_KEY` definida, `POST /api/v1/analyze` exige `X-API-Key`. El resto de endpoints son de lectura.
+
 ## Informe con el histórico del Proyecto II
 
 Sigue la [receta de entrenamiento e inferencia del II](../proyecto_ii/README.md#reproducir-el-histórico-autorizado). Usa el mismo CSV y el directorio que contiene `model.joblib` y `test_metrics.json` de una ejecución propia. Define `DSIA_BARS_CSV` y `DSIA_FROZEN_RUN` en el entorno local. Con el `PYTHONPATH` anterior:
@@ -48,7 +65,7 @@ Arranca Uvicorn con esa ruta. El generador comprueba el hash de los datos y reut
 
 - `--journal` escribe un JSONL por ejecución. Cada etapa tiene un inicio y un resultado con tiempo transcurrido. Un fallo incluye su tipo. El evento de publicación registra el `run_id`. En `from-run`, la etapa `validate_input` valida el CSV con el contrato del II y registra solo agregados (`rows`, `symbols`, `input_sha256`) antes de `infer_snapshot`. Usa un archivo nuevo fuera de `--work` para conservar la evidencia.
 - `/health` confirma que el proceso tiene en memoria un snapshot válido. El timestamp del journal mide cuándo corrió el lote y `as_of` indica el cierre de los datos. Cada valor responde a una pregunta distinta durante la demo.
-- Para un servicio gestionado, configura [`.env.example`](.env.example) en las variables del entorno y apunta a un snapshot persistente. Arranca Uvicorn con el host, puerto y política de acceso del entorno. El despliegue de referencia es local con el mismo proceso para API y dashboard.
+- Para un servicio gestionado, configura [`.env.example`](.env.example) en las variables del entorno y apunta a un snapshot persistente. API y dashboard comparten proceso; el empaquetado está en [Empaquetado y despliegue](#empaquetado-y-despliegue).
 - Suite desde la raíz:
 
   ```bash

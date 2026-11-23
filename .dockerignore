@@ -1,0 +1,23 @@
+# Contexto de proyectos/proyecto_iii/Dockerfile: solo entran los Proyectos II y III.
+.git
+.github
+.venv*
+.megapowers
+.claude-flow
+.pytest_cache
+.coverage
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+runs
+**/runs
+**/data/raw
+**/data/processed
+.env
+.env.*
+**/.env
+**/.env.*
+docs
+1_programacion_avanzada_python
+2_pruebas_y_despliegue
+proyectos/proyecto_i
