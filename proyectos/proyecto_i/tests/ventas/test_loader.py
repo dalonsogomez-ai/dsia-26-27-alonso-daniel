@@ -56,3 +56,14 @@ def test_repository_contract(sales_frame):
         def load(self):
             return sales_frame.copy()
     pd.testing.assert_frame_equal(load_from(MemorySalesRepository()), sales_frame)
+
+
+def test_package_exports_both_repositories(tmp_path, sales_frame):
+    import ventas_app
+
+    assert {"CsvSalesRepository", "JsonSalesRepository", "SalesRepository"} <= set(ventas_app.__all__)
+    assert all(hasattr(ventas_app, name) for name in ventas_app.__all__)
+    path = tmp_path / "ventas.csv"
+    sales_frame.to_csv(path, index=False)
+    loaded = ventas_app.load_from(ventas_app.CsvSalesRepository(path))
+    pd.testing.assert_frame_equal(loaded, sales_frame)
