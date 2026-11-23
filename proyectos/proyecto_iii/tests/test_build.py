@@ -1,7 +1,9 @@
 import json
+import shutil
 
 import pytest
 from swarmtrade_app.ai_client import AIClient, AIClientError
+from swarmtrade_app.data import DataError
 
 from dsia_web.ai import client_from_env
 from dsia_web.build import from_run, main
@@ -77,3 +79,41 @@ def test_invalid_input_fails_in_validate_input_and_publishes_nothing(demo_run, t
     assert [(event["stage"], event["status"], event.get("error_type")) for event in events] == [
         ("validate_input", "started", None), ("validate_input", "failed", "DataError")]
     assert not output.exists()
+
+
+@pytest.mark.parametrize("change", [{"touches": 2}, {"selected": "dummy"}])
+def test_from_run_rejects_holdout_not_matching_the_frozen_model(demo_run, tmp_path, change):
+    run = tmp_path / "run"
+    shutil.copytree(demo_run.run, run)
+    metrics = json.loads((run / "test_metrics.json").read_text())
+    metrics.update(change)
+    (run / "test_metrics.json").write_text(json.dumps(metrics))
+    output = tmp_path / "snapshot.json"
+    with pytest.raises(DataError, match="holdout"):
+        from_run(demo_run.bars, run)
+    assert main(["from-run", "--data", str(demo_run.bars), "--run", str(run),
+                 "--output", str(output)]) == 2
+    assert not output.exists()
+
+
+def test_from_run_rejects_input_different_from_the_evaluated_dataset(demo_run, tmp_path):
+    header, *rows = demo_run.bars.read_text().splitlines()
+    reordered = tmp_path / "bars.csv"
+    # Mismas barras en otro orden: el contrato las acepta pero el hash ya no es el evaluado.
+    reordered.write_text("\n".join([header, *reversed(rows)]) + "\n")
+    output = tmp_path / "snapshot.json"
+    with pytest.raises(DataError, match="no coincide"):
+        from_run(reordered, demo_run.run)
+    assert main(["from-run", "--data", str(reordered), "--run", str(demo_run.run),
+                 "--output", str(output)]) == 2
+    assert not output.exists()
+
+
+def test_existing_output_is_rejected_before_any_work(demo_run, tmp_path):
+    output = tmp_path / "snapshot.json"
+    output.write_text("anterior")
+    journal = tmp_path / "pipeline.jsonl"
+    assert main(["from-run", "--data", str(demo_run.bars), "--run", str(demo_run.run),
+                 "--output", str(output), "--journal", str(journal)]) == 2
+    assert output.read_text() == "anterior"
+    assert not journal.exists()
