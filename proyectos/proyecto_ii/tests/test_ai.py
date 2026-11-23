@@ -42,6 +42,26 @@ def test_sdk_contract_without_network(request_data, monkeypatch):
     assert 'symbol' not in calls['request']['messages'][-1]['content'].replace('n_symbols', '')
 
 
+def test_kwargs_match_real_inference_client_signature(request_data, monkeypatch):
+    # >> FakeClient(**kwargs) aceptaría cualquier argumento; se contrastan con la clase real del SDK.
+    import inspect
+    import huggingface_hub
+    real = huggingface_hub.InferenceClient
+    calls = {}
+    class Recorder:
+        def __init__(self, **kwargs):
+            calls['config'] = kwargs
+        def chat_completion(self, **kwargs):
+            calls['request'] = kwargs
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='ok'))])
+    monkeypatch.setenv('HF_TOKEN', 'test-token-not-a-real-credential')
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', Recorder)
+    AIClient('hf').analyze(request_data)
+    inspect.signature(real.__init__).bind(None, **calls['config'])
+    inspect.signature(real.chat_completion).bind(None, **calls['request'])
+    assert calls['config']['provider'] == 'auto'
+
+
 def test_provider_failure_is_redacted(request_data, monkeypatch):
     import huggingface_hub
     class BadClient:
