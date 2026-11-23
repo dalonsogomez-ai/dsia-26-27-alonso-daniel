@@ -72,7 +72,7 @@ PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh htt
 
 ## CI
 
-`>>` [`.github/workflows/ci.yml`](.github/workflows/ci.yml) se ejecuta en cada `push` a `main` y en cada `pull_request`. Tiene tres jobs:
+`>>` [`.github/workflows/ci.yml`](.github/workflows/ci.yml) se ejecuta en cada `push` a `main`, en cada `pull_request` y bajo demanda (`workflow_dispatch`). Tiene tres jobs:
 
 - `>` **proyecto-i**: `pip install -r requirements.txt`, pytest con `--cov=ventas_app --cov=acciones_app --cov-fail-under=60`, las dos CLI sin red y los ejemplos del Tema 2.
 - `>` **proyectos-ii-y-iii**: pytest del II (umbral 80 %) y `marimo check`, receta de la CLI del II con el sha256 de la demo, pytest del III (umbral 90 %), lote demo, smoke HTTP y Playwright contra el backend real. Publica el artefacto `dsia-dashboard-sintetico` (captura y journal).

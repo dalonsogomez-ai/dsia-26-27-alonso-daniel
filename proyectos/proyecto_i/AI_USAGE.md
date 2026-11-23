@@ -4,7 +4,7 @@
 
 `->` Registro de cada intervención de asistentes de IA en la entrega del Proyecto I: qué se pidió, qué se aceptó, qué se rechazó y cómo se verificó. Leyenda: `->` objetivo, `~>` cambio, `>` paso técnico, `>>` evidencia, `=>` resultado. Que se documente el uso no implica que esté autorizado: eso depende de las normas de la actividad.
 
-## 29/09/2026 y 13/10/2026 — OpenAI Codex
+## 29/09/2026 y 13/10/2026 — OpenAI Codex (familia GPT; el modelo exacto no quedó registrado)
 
 `>>` Texto original, publicado en la sección «Uso de IA» del README raíz en el commit `f2f61f0` (13/10/2026):
 
@@ -33,3 +33,9 @@
   - `>` **Convertir la regla de `vwap` en rechazo:** el vwap diario de Alpaca puede incluir operaciones fuera del horario regular y no se pudo contrastar con el CSV real (no versionado), así que queda como aviso.
   - `>` **Publicar en otro repositorio:** cualquier acción visible en GitHub queda para el autor. El CI sí se modificó, pero en un commit transversal aparte (`10f394d`: CLI A y B sin red y tests del Tema 2 en el job `proyecto-i`), registrado en [docs/AI_USAGE.md](../../docs/AI_USAGE.md).
 - `>>` **Cómo se verificó:** cada test nuevo se comprobó rompiendo temporalmente el código que cubre (se puso en rojo) y restaurándolo. Desde `proyectos/proyecto_i/`, con Python 3.12.13 y `.venv-i`: `pytest -q` → **178 passed**; `pytest -q -m "not integration"` → **174 passed, 4 deselected**; `pytest -q -m integration` → **4 passed**; cobertura conjunta de `ventas_app` y `acciones_app` → **99,31 %** (gate 60 %). Ejecución real de ambas CLI: ventas **140/10**; muestra sintética de acciones **296/5**. El autor revisa los cambios antes de integrarlos en `main`.
+
+## 23/11/2026 (tarde) — Claude Code (modelo Claude Opus 5.5): verificación final
+
+- `->` **Qué se pidió:** repetir la verificación del Proyecto I en un clon limpio y corregir lo que encontrara.
+- `~>` **Qué se aceptó:** que dos barras con fechas inválidas distintas ya no reciban el motivo «duplicados» (`116b903`, con su test en rojo antes del cambio); docstrings que faltaban en los repositorios y el generador, y la documentación del CI alineada con el workflow real (`8d11d94`).
+- `>>` **Cómo se verificó:** `pytest -q` → **178 passed** (174 unitarios y 4 de integración), cobertura **99,31 %**; el generador de la muestra sintética reproduce el CSV versionado byte a byte también en Linux x86_64 (contenedor `python:3.12-slim`, Python 3.12.16).
