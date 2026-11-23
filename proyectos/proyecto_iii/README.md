@@ -61,6 +61,20 @@ export DSIA_SNAPSHOT="$history_dir/snapshot.json"
 
 Arranca Uvicorn con esa ruta. El generador comprueba el hash de los datos y reutiliza las métricas guardadas. La demo pública utiliza el snapshot sintético. Las barras, artefactos e informes del proveedor se manejan en local.
 
+### Evidencia con datos reales sin redistribuirlos
+
+La licencia de Alpaca no permite publicar las barras, así que se versiona solo un resumen agregado: [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json). Procede de `from-run` sobre el CSV del Proyecto I (`input_sha256` `2ebbd7d7…ce4b`, el mismo que registra `preparation.json` del run `alpaca-20261112`) con `--provider mock`, el 23/11/2026:
+
+| Campo | Valor |
+| --- | --- |
+| `run_id` | `b2553cbc…6169211` |
+| Datos | `alpaca`, 10 símbolos (AAPL, AMZN, GOOGL, JNJ, JPM, META, MSFT, NVDA, TSLA, XOM), 21 960 filas, `as_of` 2026-09-28 |
+| Modelo | `swarm`; RMSE validación 0,0927 frente a 0,0937 de Dummy |
+| Holdout (un toque) | RMSE 0,0919 · MAE 0,0705 · R² −0,0059 · acierto de signo 0,589 |
+| Journal | `validate_input` 32,7 ms → `infer_snapshot` 132,4 ms → `publish_snapshot` 0,7 ms |
+
+El archivo no contiene precios, predicciones por símbolo, `input_summary` ni el texto de la explicación. Se regenera con `python -m dsia_web.evidence --snapshot <snapshot> --journal <pipeline.jsonl> --output <nuevo.json>`. En local, el mismo snapshot pasa `smoke_test.sh` y `browser_smoke.py --kind "Histórico Alpaca" --expect-pipeline`.
+
 ## Operación y verificación
 
 - `--journal` escribe un JSONL por ejecución. Cada etapa tiene un inicio y un resultado con tiempo transcurrido. Un fallo incluye su tipo. El evento de publicación registra el `run_id`. En `from-run`, la etapa `validate_input` valida el CSV con el contrato del II y registra solo agregados (`rows`, `symbols`, `input_sha256`) antes de `infer_snapshot`. Usa un archivo nuevo fuera de `--work` para conservar la evidencia.

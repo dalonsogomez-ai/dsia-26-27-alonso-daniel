@@ -24,4 +24,4 @@ Si el navegador de la exposición falla, ejecutar el smoke por terminal y usar l
 
 ## Alcance de esta versión
 
-La demo de CI usa datos sintéticos y explicación mock. La integración con un histórico Alpaca se verificó en local con el run congelado. El servicio se entrega con empaquetado local reproducible. La llamada autenticada a HF y la exposición oral siguen pendientes de sus contextos de ejecución. La cronología verificable de la adaptación del II figura en [la auditoría](../../docs/TRAZABILIDAD_DSIA.md).
+La demo de CI usa datos sintéticos y explicación mock. La integración con un histórico Alpaca se verificó en local con el run congelado y su resumen agregado, sin precios ni predicciones, está versionado en [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json) (`run_id` `b2553cbc…6169211`, holdout RMSE 0,0919). El servicio se entrega con empaquetado local reproducible. La llamada autenticada a HF y la exposición oral siguen pendientes de sus contextos de ejecución. La cronología verificable de la adaptación del II figura en [la auditoría](../../docs/TRAZABILIDAD_DSIA.md).

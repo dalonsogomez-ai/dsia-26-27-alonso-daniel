@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "run_id": "b2553cbce1f2134886be96467d69a4968c32061dc8cfd804bcec3bb426169211",
+  "data_kind": "alpaca",
+  "as_of": "2026-09-28",
+  "generated_at": "2026-11-23T19:14:05.501125+00:00",
+  "input_sha256": "2ebbd7d771ff0ee1d61e5e80dc782574ffca2b89866935f1a892174969e8ce4b",
+  "artifact_sha256": "901e59c81da27efe2a54912208b92cbc753f99386765e17e8d0d1a036510fbfe",
+  "sklearn_version": "1.9.1",
+  "horizon_sessions": 21,
+  "symbols": 10,
+  "tickers": [
+    "AAPL",
+    "AMZN",
+    "GOOGL",
+    "JNJ",
+    "JPM",
+    "META",
+    "MSFT",
+    "NVDA",
+    "TSLA",
+    "XOM"
+  ],
+  "model": "swarm",
+  "validation": {
+    "dummy": {
+      "rmse": 0.09372819057725709,
+      "mae": 0.065622825945017,
+      "r2": -0.0003300254590834495,
+      "sign_accuracy": 0.6159779614325069
+    },
+    "ridge": {
+      "rmse": 0.09500034524648741,
+      "mae": 0.06724609947498986,
+      "r2": -0.02766888069752449,
+      "sign_accuracy": 0.6057851239669422
+    },
+    "swarm": {
+      "rmse": 0.09266470511049976,
+      "mae": 0.06493381124119002,
+      "r2": 0.02224164770842807,
+      "sign_accuracy": 0.6159779614325069
+    }
+  },
+  "holdout": {
+    "rmse": 0.09192241310898526,
+    "mae": 0.07053968287394205,
+    "r2": -0.005946647741437161,
+    "sign_accuracy": 0.5893229166666667
+  },
+  "holdout_touches": 1,
+  "splits": {
+    "train": {
+      "start": "2019-01-03",
+      "end": "2023-07-06",
+      "max_target_end": "2023-08-04",
+      "rows": 11340,
+      "dates": 1134
+    },
+    "validation": {
+      "start": "2023-08-07",
+      "end": "2025-01-15",
+      "max_target_end": "2025-02-14",
+      "rows": 3630,
+      "dates": 363
+    },
+    "test": {
+      "start": "2025-02-18",
+      "end": "2026-08-27",
+      "max_target_end": "2026-09-28",
+      "rows": 3840,
+      "dates": 384
+    }
+  },
+  "explanation_provider": "mock",
+  "journal": [
+    {
+      "stage": "validate_input",
+      "status": "succeeded",
+      "duration_ms": 32.745958,
+      "rows": 21960,
+      "symbols": 10,
+      "input_sha256": "2ebbd7d771ff0ee1d61e5e80dc782574ffca2b89866935f1a892174969e8ce4b"
+    },
+    {
+      "stage": "infer_snapshot",
+      "status": "succeeded",
+      "duration_ms": 132.378625
+    },
+    {
+      "stage": "publish_snapshot",
+      "status": "succeeded",
+      "duration_ms": 0.747208,
+      "run_id": "b2553cbce1f2134886be96467d69a4968c32061dc8cfd804bcec3bb426169211"
+    }
+  ],
+  "excluded": [
+    "predictions",
+    "input_summary",
+    "explanation.text",
+    "barras",
+    "precios"
+  ]
+}
