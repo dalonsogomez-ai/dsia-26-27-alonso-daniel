@@ -29,6 +29,7 @@ class CsvBarsRepository:
     """-> Lee el CSV tabular producido por descargar_alpaca.py."""
 
     def __init__(self, path: str | Path) -> None:
+        """> Guarda la ruta; el fichero no se abre hasta `load()`."""
         self._path = Path(path)
 
     def load(self) -> pd.DataFrame:
@@ -45,6 +46,7 @@ class JsonlBarsRepository:
     """-> Lee un lote JSONL de Alpaca, opcionalmente comprimido con gzip."""
 
     def __init__(self, path: str | Path) -> None:
+        """> Guarda la ruta; el fichero no se abre hasta `load()`."""
         self._path = Path(path)
 
     def load(self) -> pd.DataFrame:

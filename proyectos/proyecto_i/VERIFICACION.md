@@ -12,7 +12,7 @@
 | Validación adaptada al dominio B | Fechas UTC, precios finitos positivos, OHLC, contadores, duplicados y aviso de `vwap` fuera de `[low, high]` |
 | Tres métricas B | Rentabilidad del precio, volumen medio diario y volatilidad anualizada |
 | Tests de los cuatro módulos en ambas partes | `tests/ventas/` y `tests/acciones/` |
-| ≥8 tests en total | **177 tests en verde** |
+| ≥8 tests en total | **178 tests en verde** |
 | Cobertura ≥60 % | **99,31 % conjunta**; los módulos con menor cobertura (`cli.py` de A y B) alcanzan el 97 % |
 | AAA, assert, raises, parametrize, fixture | Aplicados en la suite; AAA marcado en tests de A y de B; fixtures en memoria y `tmp_path` |
 | ≥1 integración | **4 tests de integración**, sin red: checkpoint 140/10, muestra sintética de B (296/5 y las tres métricas) y ambas CLI con `python -m` |
@@ -36,7 +36,7 @@ python -m ventas_app.cli --input data/ventas.csv --output data/processed/ventas.
 python -m acciones_app.cli --input data/sample/acciones_muestra.csv --output data/processed/acciones.csv
 ```
 
-`=>` Resultados: **177 passed**; **173 passed, 4 deselected**; **4 passed, 173 deselected**; cobertura total **99,31 %** («Required test coverage of 60% reached»). Ventas: **140 válidas / 10 inválidas**, y la fila con `unidades = na` conserva ese valor en `ventas_invalidas.csv`. Muestra sintética de acciones: **296 válidas / 5 inválidas**, un aviso de `vwap` fuera de rango y las tres métricas para `FICT.A`–`FICT.D`. Desde la raíz del repositorio, `python -m pytest -q` ejecuta la misma suite.
+`=>` Resultados: **178 passed**; **174 passed, 4 deselected**; **4 passed, 174 deselected**; cobertura total **99,31 %** («Required test coverage of 60% reached»). Ventas: **140 válidas / 10 inválidas**, y la fila con `unidades = na` conserva ese valor en `ventas_invalidas.csv`. Muestra sintética de acciones: **296 válidas / 5 inválidas**, un aviso de `vwap` fuera de rango y las tres métricas para `FICT.A`–`FICT.D`. Desde la raíz del repositorio, `python -m pytest -q` ejecuta la misma suite.
 
 `>>` Cada test nuevo se comprobó rompiendo temporalmente el código que cubre (se puso en rojo) y restaurándolo. Detalle de los cambios en [AI_USAGE.md](AI_USAGE.md).
 

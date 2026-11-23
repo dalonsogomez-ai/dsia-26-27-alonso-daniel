@@ -46,10 +46,12 @@ def sessions(first: date, count: int) -> list[date]:
 
 
 def _floor(value: float) -> float:
+    """> Redondea hacia abajo a 4 decimales para que low no supere el precio real."""
     return math.floor(value * 10_000) / 10_000
 
 
 def _ceil(value: float) -> float:
+    """> Redondea hacia arriba a 4 decimales para que high no quede por debajo del precio real."""
     return math.ceil(value * 10_000) / 10_000
 
 
@@ -90,6 +92,7 @@ def inject_dirty_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     per_symbol = len(dirty) // len(SYMBOLS)
 
     def at(symbol: str, session: int) -> dict[str, object]:
+        """> Devuelve la barra de `symbol` en la sesión `session` dentro de la lista plana."""
         return dirty[SYMBOLS.index(symbol) * per_symbol + session]
 
     incoherent = at("FICT.B", 20)

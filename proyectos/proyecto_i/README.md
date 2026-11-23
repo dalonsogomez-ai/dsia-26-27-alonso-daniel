@@ -193,13 +193,13 @@ pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-
 
 `>` Desde la raíz se puede ejecutar también `python -m pytest -q`: el `pytest.ini` raíz apunta a los tests de esta carpeta. Los tests de ejemplo del Tema 2 se ejecutan por separado.
 
-`=>` **Cifras vigentes, 23/11/2026** (Python 3.12.13, `.venv-i`, desde esta carpeta): **177 tests en verde**, de los cuales **173 unitarios** (`-m "not integration"`) y **4 de integración**, con **99,31 % de cobertura conjunta** de `ventas_app` y `acciones_app` (gate 60 %). Las CLI procesan el CSV del curso (140/10) y la muestra sintética de B (296/5).
+`=>` **Cifras vigentes, 23/11/2026** (Python 3.12.13, `.venv-i`, desde esta carpeta): **178 tests en verde**, de los cuales **174 unitarios** (`-m "not integration"`) y **4 de integración**, con **99,31 % de cobertura conjunta** de `ventas_app` y `acciones_app` (gate 60 %). Las CLI procesan el CSV del curso (140/10) y la muestra sintética de B (296/5).
 
 `>>` Cifras históricas del **13/10/2026**, conservadas como referencia: 98 tests en verde, 3 de integración y 99,25 % de cobertura. Incluían regresiones para valores infinitos, importes no representables, errores de codificación, extensiones gzip en mayúsculas y protección del archivo de entrada. Aquel día las CLI procesaron también el CSV descargado de Alpaca (21.960 válidas, 0 inválidas), que no se versiona.
 
 ## CI
 
-`>>` Workflow: [.github/workflows/ci.yml](../../.github/workflows/ci.yml), adaptado de la plantilla del profesor. Se ejecuta en `push` a `main`, `pull_request` y manualmente, sobre Ubuntu con **Python 3.12**, instala `requirements.txt` y comprueba ambos paquetes con `--cov-fail-under=60`. Un fallo de tests o de cobertura hace fallar el job.
+`>>` Workflow: [.github/workflows/ci.yml](../../.github/workflows/ci.yml), adaptado de la plantilla del profesor. Se ejecuta en `push` a `main`, `pull_request` y manualmente, sobre Ubuntu con **Python 3.12**, instala `requirements.txt` y comprueba ambos paquetes con `--cov-fail-under=60`. Después ejecuta sin red las dos CLI (A sobre `data/ventas.csv`, B sobre la muestra sintética `data/sample/acciones_muestra.csv`) y los tests de ejemplo del Tema 2. Un fallo de tests, de cobertura o de cualquier CLI hace fallar el job `proyecto-i`; el mismo workflow tiene jobs aparte para el II/III y la imagen Docker del III.
 
 `>>` Ejecuciones y evidencia: [GitHub Actions](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml).
 
@@ -219,7 +219,7 @@ pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-
 - `>` **13 octubre:** ejecutar ambos pipelines y verificar los tests y la cobertura.
 - `>>` **13 octubre:** comprobar los archivos generados y el workflow de GitHub Actions.
 - `=>` **13 octubre:** pipelines ejecutables, tests en verde y documentación en la carpeta de la entrega.
-- `~>` **23 noviembre:** auditoría de cumplimiento y mejoras, cada una en su propio commit: muestra sintética de B con su generador y test de integración, validadores más estrictos que conservan los valores originales en los rechazos, mensajes de fichero inexistente en el loader de B, `descargar_alpaca_actual.py` con argparse, AI_USAGE.md y cifras actualizadas (177 tests, 99,31 %).
+- `~>` **23 noviembre:** auditoría de cumplimiento y mejoras, cada una en su propio commit: muestra sintética de B con su generador y test de integración, validadores más estrictos que conservan los valores originales en los rechazos, mensajes de fichero inexistente en el loader de B, `descargar_alpaca_actual.py` con argparse, AI_USAGE.md y cifras actualizadas (178 tests, 99,31 %).
 
 `>>` Cronología del historial, explicada sin reescribirlo: el 21 de septiembre se creó la carpeta inicial (`8d974d2`). El código de las Partes A y B se **integró en Git el 13 de octubre**, sin commits intermedios del trabajo anterior (la extracción de Alpaca es del 29 de septiembre), en commits separados pero muy seguidos (`f3ec78e` y `e1a1a9a`, con 20 segundos de diferencia), seguidos de la documentación, el CI y las correcciones de la revisión pública. El 23 de noviembre se añadieron los Proyectos II y III y una ampliación del I en commits también consecutivos (`41b505c`, `e524ec0`, `3d991d2`). Esas fechas son las reales de los commits y no se han modificado; desde el 23 de noviembre cada mejora va en un commit atómico.
 

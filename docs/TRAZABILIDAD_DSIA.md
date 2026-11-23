@@ -12,7 +12,7 @@ El Proyecto I pesa el 10 % de la asignatura. Sin tests en verde de loader, valid
 | --- | --- | --- |
 | Parte A ejecutable de extremo a extremo | Cumple | [CLI de ventas](../proyectos/proyecto_i/ventas_app/cli.py) sobre `data/ventas.csv`: 140 válidas y 10 inválidas (local). El job `proyecto-i` del [CI](../.github/workflows/ci.yml) la ejecuta en el paso «CLI A y B de extremo a extremo sin red» |
 | Parte B ejecutable de extremo a extremo | Cumple, con datos sintéticos | [CLI de acciones](../proyectos/proyecto_i/acciones_app/cli.py) sobre la [muestra sintética versionada](../proyectos/proyecto_i/data/sample/acciones_muestra.csv): 296 válidas y 5 inválidas (local y en CI). Con datos reales necesita cuenta de Alpaca y red ([prerrequisitos](../proyectos/proyecto_i/README.md#parte-b--acciones)) |
-| `pytest -q` en verde (≥ 8 tests) | Cumple | 177 tests en local (173 unitarios y 4 de integración); 121 en el run 45227267528. [Verificación](../proyectos/proyecto_i/VERIFICACION.md) |
+| `pytest -q` en verde (≥ 8 tests) | Cumple | 178 tests en local (174 unitarios y 4 de integración); 121 en el run 45227267528. [Verificación](../proyectos/proyecto_i/VERIFICACION.md) |
 | Cobertura ≥ 60 % (`--cov-fail-under=60`) | Cumple | 99,31 % en local y 99,25 % en el run 45227267528, con `--cov=ventas_app --cov=acciones_app` |
 | Tests de loader, validator, metrics y cli en A | Cumple | [tests/ventas](../proyectos/proyecto_i/tests/ventas): `test_loader.py`, `test_validator.py`, `test_metrics.py` y `test_cli.py` |
 | Tests de loader, validator, metrics y cli en B | Cumple | [tests/acciones](../proyectos/proyecto_i/tests/acciones): los cuatro módulos más `test_muestra_sintetica.py` |
