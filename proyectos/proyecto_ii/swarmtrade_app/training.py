@@ -95,9 +95,13 @@ def evaluate_holdout(run: Path, *, ledger: Path | None = None) -> dict:
     artifact = joblib.load(run / 'model.joblib')
     prepared = load_prepared(run)
     result = {}
+    # > Referencia fija de train (DummyRegressor mean): no entra en la selección y comparte el único toque.
+    train_mean = float(prepared.train['target'].mean())
 
     def evaluate(y, prediction):
         result.update(metrics(y, prediction))
+        result['baseline'] = {'model': 'dummy_mean_train', 'prediction': train_mean,
+                              **metrics(y, np.full(len(y), train_mean))}
         return result['rmse']
 
     def predict(frame):
@@ -106,5 +110,7 @@ def evaluate_holdout(run: Path, *, ledger: Path | None = None) -> dict:
     guard.final_test(predict, prepared.holdout, target='target', metric_fn=evaluate,
                      state_dir=run, pipeline_md=(ledger or run) / 'PIPELINE.md')
     result.update(selected=artifact['report']['selected'], touches=1)
+    LOG.info('Holdout model=%s rmse=%.6f baseline_rmse=%.6f touches=1', result['selected'], result['rmse'],
+             result['baseline']['rmse'])
     (run / 'test_metrics.json').write_text(json.dumps(result, indent=2))
     return result
