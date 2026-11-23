@@ -2,7 +2,7 @@
 
 > Contrato CSV diario largo: `date` (o `timestamp` ISO 8601), `symbol`, `close`, `volume`. OHLC opcional; precios positivos, volumen no negativo, claves únicas, valores finitos y al menos cinco símbolos. Panel de fechas comunes sin huecos. El código no consulta Alpaca ni rellena precios al cargar este CSV.
 
-~> Demo pública reproducible: `python -m swarmtrade_app demo-data --output data/demo.csv --seed 42`. Caminatas lognormales correlacionadas generadas con NumPy, sin señal artificial añadida para asegurar un resultado favorable. Los días laborables sintéticos no son el calendario NYSE. Estos datos son generados por el proyecto y no proceden de un proveedor financiero; se puede regenerar la demo sin descargar ni redistribuir Alpaca.
+~> Demo pública reproducible: `python -m swarmtrade_app demo-data --output data/demo.csv --sessions 680 --symbols 8 --seed 42` (los mismos parámetros que la receta del [README](../README.md) y el CI; sha256 `484397d2…f2f0`). Caminatas lognormales correlacionadas generadas con NumPy, sin señal artificial añadida para asegurar un resultado favorable. Los días laborables sintéticos no son el calendario NYSE. Estos datos son generados por el proyecto y no proceden de un proveedor financiero; se puede regenerar la demo sin descargar ni redistribuir Alpaca.
 
 > Entrada histórica local: CSV de barras diarias de Alpaca. El Proyecto I documenta extracción, feed y ajuste. El usuario puede referenciar el CSV correspondiente desde su entorno privado. [Fuente y extracción](../../proyecto_i/ALPACA.md)
 
