@@ -1,12 +1,12 @@
 # Release Candidate del Proyecto III
 
-- Versión de la entrega **RC1 · 23 de noviembre de 2026**, preparada para el tag **`v0.9.0-rc1`**.
+- Versión de la entrega **RC1 · 23 de noviembre de 2026**, etiquetada como **`v0.9.0-rc1`**.
 - Contrato del snapshot **1**, con el campo opcional `input_summary` compatible hacia atrás. Se verifica el commit concreto en [GitHub Actions en main](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml?query=branch%3Amain).
 - Preparación de la demo y recuperación en el [README](README.md#arranque-local-de-api-y-dashboard).
 
 ## v0.9.0-rc1
 
-El tag anotado se crea en un paso aparte, sobre el commit con CI verde, y se enlazará aquí: `https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1`.
+Tag anotado [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1), creado el 23/11/2026 sobre `0119c57` de `main` (PR #1 integrado, CI verde en el run [45271855953](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271855953)) y desplegado en https://dsia-swarmtrader.onrender.com.
 
 | Ámbito | Contenido |
 | --- | --- |

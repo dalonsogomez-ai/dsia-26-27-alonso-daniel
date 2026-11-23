@@ -64,7 +64,7 @@ El Proyecto III pesa el 40 % de la asignatura. El enunciado fija Release Candida
 | README: cómo arrancar la API y el dashboard | Cumple | [Arranque local](../proyectos/proyecto_iii/README.md#arranque-local-de-api-y-dashboard): un solo proceso Uvicorn sirve API y dashboard; [contrato HTTP](../proyectos/proyecto_iii/API.md) |
 | README: URL de despliegue si existe | Cumple | [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com), documentada en el [README del III](../proyectos/proyecto_iii/README.md#empaquetado-y-despliegue) con su comprobación |
 | Evidencia de que el dashboard consume el backend real | Cumple | [Evidencia](../proyectos/proyecto_iii/README.md#evidencia-de-que-el-dashboard-consume-el-backend-real): `browser_smoke.py` compara las respuestas reales de la API con el DOM y el artefacto `dsia-dashboard-sintetico` del run 45271274056 guarda captura y journal; la misma prueba pasa contra el despliegue de Render ([captura](../proyectos/proyecto_iii/evidencia/dashboard_render.png)) |
-| Release Candidate | Pendiente del autor | [RELEASE.md](../proyectos/proyecto_iii/RELEASE.md#v090-rc1) prepara `v0.9.0-rc1`; el tag no existe todavía |
+| Release Candidate | Cumple | Tag [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1) sobre `0119c57` (23/11/2026, CI verde); notas en [RELEASE.md](../proyectos/proyecto_iii/RELEASE.md#v090-rc1) |
 
 La rúbrica reparte 20 % a complejidad y valor, 15 % a arquitectura, 20 % a integración, 15 % a web y monitorización, 15 % a tests, robustez y despliegue y 15 % a exposición y documentación. El dashboard y el artefacto sintético sostienen una defensa repetible. El espacio de investigación conserva sus límites de cobertura de activos e incertidumbre.
 
@@ -72,7 +72,7 @@ La rúbrica reparte 20 % a complejidad y valor, 15 % a arquitectura, 20 % a inte
 
 - **No subsanable sin falsear fechas.** El historial de octubre del II no existe en este repositorio, y el código del I se integró en Git el 13/10 en commits seguidos. Se declara tal cual; no se reescribe historia.
 - **Hecho el 23/11/2026.** Rama integrada en `main` con el [PR #1](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/1) y CI verde ([45271274056](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45271274056)); servicio de Render desplegando desde `main` en https://dsia-swarmtrader.onrender.com.
-- **Depende del autor.** Crear y publicar el tag `v0.9.0-rc1`; probar la llamada autenticada a Hugging Face con su token; sincronizar o archivar el remoto antiguo `dalonsogomez/dsia-26-27-alonso-daniel`, que se quedó en `8d974d2`; y la exposición del 30/11.
+- **Depende del autor.** Probar la llamada autenticada a Hugging Face con su token; sincronizar o archivar el remoto antiguo `dalonsogomez/dsia-26-27-alonso-daniel`, que se quedó en `8d974d2`; y la exposición del 30/11.
 
 ## Índices y prácticas revisados
 
