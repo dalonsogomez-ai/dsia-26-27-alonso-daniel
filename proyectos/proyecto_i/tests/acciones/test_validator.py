@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from acciones_app.validator import ValidationError, validate_bars
+from acciones_app.validator import ValidationError, validate_bars, vwap_outside_range
 
 
 def test_valid_bars_are_sorted_and_input_is_unchanged(bars_frame):
@@ -41,6 +41,26 @@ def test_invalid_rows_keep_original_values(bars_frame, column, value):
     valid, invalid = validate_bars(frame)
     assert len(valid) == 1 and len(invalid) == 1
     assert invalid.iloc[0][column] == value
+
+
+@pytest.mark.parametrize("vwap,warned", [(500.0, True), (98.9, True), (99.0, False), (101.0, False), (100.0, False)])
+def test_vwap_outside_range_only_warns(bars_frame, caplog, vwap, warned):
+    frame = bars_frame.iloc[:1].copy()  # low = 99, high = 101
+    frame.loc[0, "vwap"] = vwap
+    with caplog.at_level("WARNING", logger="acciones_app.validator"):
+        valid, invalid = validate_bars(frame)
+    assert len(valid) == 1 and invalid.empty
+    assert ("vwap fuera de [low, high]" in caplog.text) is warned
+    assert vwap_outside_range(valid).tolist() == [warned]
+
+
+def test_vwap_warning_ignores_rejected_bars(bars_frame, caplog):
+    frame = bars_frame.iloc[:1].copy()
+    frame.loc[0, ["vwap", "volume"]] = [500.0, -1]
+    with caplog.at_level("WARNING", logger="acciones_app.validator"):
+        valid, invalid = validate_bars(frame)
+    assert valid.empty and len(invalid) == 1
+    assert "vwap" not in caplog.text
 
 
 def test_zero_counts_are_valid(bars_frame):

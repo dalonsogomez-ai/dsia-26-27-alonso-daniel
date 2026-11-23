@@ -120,6 +120,7 @@ python -m acciones_app.cli \
 | `volume`, `trade_count` | Números finitos, enteros y no negativos |
 | OHLC | `low ≤ open, close ≤ high` y `low ≤ high` |
 | `(symbol, timestamp)` | Clave única; se rechazan todos los miembros de un duplicado |
+| `vwap` en `[low, high]` | **Solo aviso** en el log (`WARNING`), no rechazo: el vwap diario de Alpaca puede incluir operaciones fuera del horario regular |
 
 `~>` El validador conserva el DataFrame de entrada, devuelve válidas ordenadas por símbolo y fecha y añade motivos a las inválidas, que conservan los valores originales recibidos (una fecha mal escrita no se convierte en `NaT`). Los campos adicionales recibidos de la API se conservan. Un esquema incompleto genera `ValidationError`; un fallo de carga genera `DataLoadError`.
 
