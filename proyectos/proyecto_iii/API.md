@@ -65,7 +65,7 @@ curl -s http://127.0.0.1:8765/api/v1/metrics
 
 ## Errores
 
-Los errores comparten la forma `{"error": "<código>", "detail": {"code": "<código>", "message": "…"}, "request_id": "…"}`. `detail` se mantiene por compatibilidad con la RC1.
+Los errores comparten la forma `{"error": "<código>", "detail": {"code": "<código>", "message": "…"}, "request_id": "…"}`. `detail` se mantiene por compatibilidad con la RC1. También los del enrutador: una ruta o estático inexistente devuelve `404 not_found` y un método no admitido `405 method_not_allowed` (con la cabecera `Allow`).
 
 ## Cabeceras y trazabilidad
 

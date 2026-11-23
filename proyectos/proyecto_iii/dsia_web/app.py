@@ -16,6 +16,7 @@ from typing import Annotated, Callable
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
@@ -51,6 +52,19 @@ def error_response(request: Request, status: int, code: str, message: str, **ext
     """Error tipado y estable: código, mensaje genérico y request_id; nunca rutas ni trazas."""
     return JSONResponse({"error": code, "detail": {"code": code, "message": message, **extra},
                          "request_id": request_id(request.scope)}, status_code=status)
+
+
+ROUTER_ERRORS = {404: ("not_found", "Ruta no encontrada."),
+                 405: ("method_not_allowed", "Método no admitido en esta ruta.")}
+
+
+async def router_error(request: Request, exc: HTTPException) -> JSONResponse:
+    """> 404/405 del enrutador y de StaticFiles con la misma forma tipada que el resto de errores."""
+    code, message = ROUTER_ERRORS.get(exc.status_code, ("http_error", "Petición no válida."))
+    response = error_response(request, exc.status_code, code, message)
+    if exc.headers:
+        response.headers.update(exc.headers)  # -> conserva `Allow` en el 405
+    return response
 
 
 async def read_limited_body(request: Request, limit: int = MAX_BODY_BYTES) -> bytes | None:
@@ -229,7 +243,8 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         Route("/api/v1/pipeline", pipeline),
         Route("/api/v1/metrics", service_metrics),
         Mount("/static", app=StaticFiles(directory=STATIC)),
-    ], middleware=[Middleware(ObservabilityMiddleware, metrics=metrics)])
+    ], middleware=[Middleware(ObservabilityMiddleware, metrics=metrics)],
+        exception_handlers={404: router_error, 405: router_error})
     application.state.metrics = metrics
     return application
 

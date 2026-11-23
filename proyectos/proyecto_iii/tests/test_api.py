@@ -113,3 +113,22 @@ def test_oversized_snapshot_is_rejected_and_service_reports_503(tmp_path):
     assert response.status_code == 503
     assert response.json()["error"] == "snapshot_unavailable"
     assert response.json()["request_id"] == response.headers["x-request-id"]
+
+
+@pytest.mark.parametrize("method,path,status,code", [
+    ("GET", "/no-existe", 404, "not_found"),
+    ("GET", "/static/no-existe.css", 404, "not_found"),
+    ("GET", "/api/v1/analyze", 405, "method_not_allowed"),
+    ("DELETE", "/health", 405, "method_not_allowed"),
+])
+def test_router_errors_share_the_typed_json_shape(demo_run, method, path, status, code):
+    # Arrange
+    with TestClient(create_app(demo_run[0])) as client:
+        # Act
+        response = client.request(method, path, headers={"X-Request-ID": "router-error-1"})
+    # Assert: misma forma que el resto de errores de API.md.
+    assert response.status_code == status
+    assert response.json() == {"error": code, "detail": {"code": code, "message": response.json()["detail"]["message"]},
+                               "request_id": "router-error-1"}
+    if status == 405:
+        assert response.headers["allow"]
