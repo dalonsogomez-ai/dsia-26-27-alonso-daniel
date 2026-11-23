@@ -168,3 +168,20 @@ pytest --cov=ventas_app --cov=acciones_app --cov-report=term-missing --cov-fail-
 - `>` **13 octubre:** ejecutar ambos pipelines y verificar los tests y la cobertura.
 - `>>` **13 octubre:** comprobar los archivos generados y el workflow de GitHub Actions.
 - `=>` **13 octubre:** pipelines ejecutables, tests en verde y documentación en la carpeta de la entrega.
+
+### Perfil estadístico reproducible de la Parte B
+
+Después de la descarga autorizada, ejecuta desde esta carpeta. El perfil describe la entrada de la que parten la validación y las tres agregaciones.
+
+```python
+import pandas as pd
+
+bars = pd.read_csv("data/raw/alpaca_barras.csv")
+print("Dimensiones", bars.shape)
+print("Tipos", bars.dtypes.to_dict())
+print("Nulos por columna", bars.isna().sum().to_dict())
+print("Duplicados símbolo/fecha", bars.duplicated(["symbol", "timestamp"]).sum())
+print(bars[["open", "high", "low", "close", "volume"]].describe().round(3))
+```
+
+Las [fixtures OHLCV de las pruebas](tests/conftest.py) se generan localmente. El [extractor ampliado](descargar_alpaca_completo.py) gestiona checkpoints; se puede consultar su estado con `python estado_alpaca.py`. El flujo de la rúbrica usa el CSV de las barras diarias.

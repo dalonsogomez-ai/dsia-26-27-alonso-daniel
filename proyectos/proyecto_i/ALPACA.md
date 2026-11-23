@@ -62,13 +62,13 @@ python3 descargar_alpaca_actual.py
 
 Los scripts de barras y subastas consultan **todos los símbolos no OTC con formato de ticker** del catálogo, tanto activos como inactivos. Los rechazos concretos de la API quedan en el manifiesto de cada lote; `activos_no_consultados.json` recoge los excluidos de entrada. Las noticias y acciones corporativas se consultan sin filtro de símbolo, para no perder eventos ligados a tickers históricos. Las capturas actuales usan solo activos vigentes y el feed IEX. Cada lote o periodo terminado tiene un archivo comprimido y un manifiesto; repetir el comando salta los archivos terminados y vuelve a intentar los fallidos. `fallos.json` debe quedar vacío tras una ejecución completa. No hay datos de la sesión bursátil en curso en los históricos SIP del plan Basic.
 
-La extracción dispone de un supervisor local (`continuar_alpaca.py`) que espera a los procesos originales, reintenta barras, subastas y noticias, y registra el resultado en `data/raw/masivo/supervisor.log`. En la revisión del **13 de octubre de 2026** no hay procesos activos: las barras terminaron en 310/310 lotes (21.391.408 registros), las acciones corporativas en 19/19 periodos (382.051), y las capturas actuales en 265/265 lotes (13.167 símbolos con datos). Las subastas quedaron en 36/310 lotes y las noticias en 21/141 meses. Esta colección masiva parcial es adicional al CSV de diez símbolos usado por la Parte B. Para consultar el avance local:
+El descargador ampliado usa checkpoints por página y un bloqueo de ejecución. Para reanudar un intervalo existente usa el mismo corte. Define un corte autorizado acorde a tus necesidades.
 
 ```bash
+python3 continuar_alpaca.py --end 2026-10-18
 python3 estado_alpaca.py
-tail -n 20 data/raw/masivo/supervisor.log
 ```
 
-Los datos se guardan en `data/raw/masivo/`, fuera de Git. Cada descargador detiene la escritura si su propio directorio supera 50 GB o quedan menos de 20 GB libres; los límites pueden ajustarse con `--max-gb` y `--min-free-gb`. El archivo `estado_actual/` es una **captura puntual**, no un historial.
+Los resultados se guardan en `data/raw/masivo/`. El descargador ampliado comprueba un límite de espacio global durante la descarga y conserva los parciales. Los scripts de descarga por familia no comparten su bloqueo. El CSV de diez símbolos sigue siendo el flujo de datos de la Parte B.
 
 Las operaciones y cotizaciones individuales también existen en la API, pero cada página tiene como máximo 10.000 registros y puede llenarse con una fracción de un solo día para una sola empresa. Extraer cada tick de todos los símbolos durante todos los años exigiría un volumen y tiempo muy superiores a esta colección de barras diarias. Para el análisis del Proyecto I, usar `alpaca_barras.csv` (21.960 filas) o convertir por lotes `masivo/barras_diarias/*.jsonl.gz` sin cargar el universo completo en memoria. El enunciado **no establece un mínimo de 10.000 filas**: exige una fuente documentada, validación, métricas, CLI, tests y CI.
