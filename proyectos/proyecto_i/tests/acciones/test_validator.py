@@ -32,6 +32,17 @@ def test_invalid_values_have_reason(bars_frame, column, value, reason):
     assert reason in invalid.iloc[0]["motivo"]
 
 
+@pytest.mark.parametrize("column,value", [
+    ("timestamp", "no-fecha"), ("volume", "mal"), ("symbol", " a!a "), ("close", "-1"),
+])
+def test_invalid_rows_keep_original_values(bars_frame, column, value):
+    frame = bars_frame.iloc[:2].copy().astype({column: "object"})
+    frame.loc[1, column] = value
+    valid, invalid = validate_bars(frame)
+    assert len(valid) == 1 and len(invalid) == 1
+    assert invalid.iloc[0][column] == value
+
+
 def test_zero_counts_are_valid(bars_frame):
     frame = bars_frame.iloc[:1].copy()
     frame.loc[0, ["volume", "trade_count"]] = 0

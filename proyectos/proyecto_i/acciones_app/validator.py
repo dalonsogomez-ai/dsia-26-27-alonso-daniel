@@ -19,11 +19,14 @@ def validate_bars(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     Se rechazan todos los miembros de una clave duplicada (symbol, timestamp),
     evitando escoger de forma arbitraria entre observaciones contradictorias.
+    Las válidas salen normalizadas (símbolo en mayúsculas, fecha UTC, números);
+    las inválidas conservan los valores originales y añaden `motivo`.
     """
     missing = REQUIRED_COLUMNS.difference(frame.columns)
     if missing:
         raise ValidationError(f"Faltan columnas obligatorias: {', '.join(sorted(missing))}")
-    bars = frame.copy().reset_index(drop=True)
+    original = frame.reset_index(drop=True)
+    bars = original.copy()
     bars["symbol"] = bars["symbol"].astype("string").str.strip().str.upper()
     bars["timestamp"] = pd.to_datetime(bars["timestamp"], format="ISO8601", utc=True, errors="coerce")
     for column in (*PRICES, *COUNTS):
@@ -47,7 +50,8 @@ def validate_bars(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     checks = pd.DataFrame(rules, index=bars.index).fillna(False)
     mask = checks.all(axis=1)
     valid = bars.loc[mask].sort_values(["symbol", "timestamp"]).reset_index(drop=True)
-    invalid = bars.loc[~mask].copy()
+    # => Los rechazos se exportan con los valores recibidos, no con los convertidos.
+    invalid = original.loc[~mask].copy()
     invalid["motivo"] = checks.loc[~mask].apply(
         lambda row: "; ".join(row.index[~row]), axis=1
     ) if len(invalid) else pd.Series(dtype="string")

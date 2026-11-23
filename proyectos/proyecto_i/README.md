@@ -121,7 +121,7 @@ python -m acciones_app.cli \
 | OHLC | `low ≤ open, close ≤ high` y `low ≤ high` |
 | `(symbol, timestamp)` | Clave única; se rechazan todos los miembros de un duplicado |
 
-`~>` El validador conserva el DataFrame de entrada, devuelve válidas ordenadas por símbolo y fecha y añade motivos a las inválidas. Los campos adicionales recibidos de la API se conservan. Un esquema incompleto genera `ValidationError`; un fallo de carga genera `DataLoadError`.
+`~>` El validador conserva el DataFrame de entrada, devuelve válidas ordenadas por símbolo y fecha y añade motivos a las inválidas, que conservan los valores originales recibidos (una fecha mal escrita no se convierte en `NaT`). Los campos adicionales recibidos de la API se conservan. Un esquema incompleto genera `ValidationError`; un fallo de carga genera `DataLoadError`.
 
 ### Tres métricas
 
