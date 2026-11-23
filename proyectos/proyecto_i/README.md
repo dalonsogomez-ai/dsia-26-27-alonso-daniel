@@ -71,7 +71,9 @@ python -m ventas_app.cli \
   --output data/processed/ventas.csv
 ```
 
-`~>` El loader admite CSV y una lista de objetos JSON. El validador requiere las columnas `region`, `producto`, `unidades`, `precio_unitario` y `cliente_id`, convierte los valores numéricos y rechaza unidades o precios nulos, no numéricos, no finitos o no positivos. Calcula `importe = unidades × precio_unitario` y comprueba que el resultado sea finito y positivo.
+`~>` El loader admite CSV y una lista de objetos JSON. El validador requiere las columnas `region`, `producto`, `unidades`, `precio_unitario` y `cliente_id`, convierte los valores numéricos y rechaza unidades o precios nulos, no numéricos, no finitos o no positivos, y unidades no enteras. `region`, `producto` y `cliente_id` no pueden ser nulos ni quedar vacíos tras quitar espacios. Si existe la columna `fecha`, debe tener el formato `YYYY-MM-DD` y ser una fecha real del calendario. Calcula `importe = unidades × precio_unitario` y comprueba que el resultado sea finito y positivo.
+
+`~>` Las filas rechazadas conservan los **valores originales** de cada columna (por ejemplo, `unidades = na`) y añaden en `motivo` todas las reglas incumplidas, separadas por `; `.
 
 `=>` El CSV del curso produce **140 válidas y 10 inválidas**, comprobadas en un test de integración.
 
