@@ -97,3 +97,46 @@ def test_python_module_entrypoint(tmp_path, bars_frame):
     assert len(pd.read_csv(output)) == 6
     returns = pd.read_csv(tmp_path / "clean_rentabilidad.csv").set_index("symbol")
     assert returns.loc["AAA", "return_pct"] == pytest.approx(-1)
+
+
+PROJECT = Path(__file__).resolve().parents[2]
+SAMPLE = Path("data") / "sample" / "acciones_muestra.csv"
+
+
+@pytest.mark.integration
+def test_cli_processes_committed_synthetic_sample(tmp_path):
+    # Arrange: la muestra SINTÉTICA versionada (sin datos de Alpaca), igual que en el README.
+    output = tmp_path / "acciones.csv"
+
+    # Act: la CLI real, en un proceso aparte y sin red.
+    result = subprocess.run(
+        [sys.executable, "-m", "acciones_app.cli", "--input", str(SAMPLE), "--output", str(output)],
+        cwd=PROJECT, capture_output=True, text=True, check=False,
+    )
+
+    # Assert: recuentos exactos, motivos de las filas sucias y las tres métricas.
+    assert result.returncode == 0, result.stderr
+    assert "Barras válidas: 296 | inválidas: 5" in result.stderr
+    assert "1 barras válidas con vwap fuera de [low, high]" in result.stderr
+    assert len(pd.read_csv(output)) == 296
+    invalid = pd.read_csv(tmp_path / "acciones_invalidas.csv")
+    assert invalid["motivo"].value_counts().to_dict() == {
+        "símbolo y fecha duplicados": 2,
+        "precios OHLC incoherentes": 1,
+        "volume debe ser entero no negativo": 1,
+        "fecha inválida": 1,
+    }
+    assert "2026-02-30T05:00:00Z" in invalid["timestamp"].tolist()
+    symbols = ["FICT.A", "FICT.B", "FICT.C", "FICT.D"]
+    returns = pd.read_csv(tmp_path / "acciones_rentabilidad.csv").set_index("symbol")
+    volume = pd.read_csv(tmp_path / "acciones_volumen.csv").set_index("symbol")
+    volatility = pd.read_csv(tmp_path / "acciones_volatilidad.csv").set_index("symbol")
+    assert returns.index.tolist() == volume.index.tolist() == volatility.index.tolist() == symbols
+    assert returns["observations"].tolist() == [74] * 4
+    assert volatility["return_observations"].tolist() == [73] * 4
+    assert returns["return_pct"].tolist() == pytest.approx(
+        [21.682706284673014, 2.0924497570836476, 5.361648444070655, 0.8284268920424331])
+    assert volume["average_daily_volume"].tolist() == pytest.approx(
+        [2497893.7702702703, 2479998.5135135134, 2502226.3243243243, 2381996.878378378])
+    assert volatility["annualized_volatility_pct"].tolist() == pytest.approx(
+        [20.623790187983094, 23.234531080612093, 22.352270804082355, 25.9661472756121])

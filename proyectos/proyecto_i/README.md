@@ -87,7 +87,7 @@ python -m ventas_app.cli \
 
 `>>` La elección son **barras diarias de diez símbolos**, con observaciones comparables y reglas OHLCV específicas del dominio. El dataset descargado el **29 de septiembre de 2026** contiene **21.960 filas**, del 2 de enero de 2018 al 28 de septiembre de 2026, con feed SIP y ajuste por splits. La API es públicamente documentada y requiere una cuenta y autenticación; sus datos no se presentan como open data.
 
-`>>` Origen: [Alpaca Market Data API](https://docs.alpaca.markets/us/docs/about-market-data-api), endpoint `https://data.alpaca.markets/v2/stocks/bars`. Alpaca [prohíbe redistribuir los datos obtenidos mediante su API](https://alpaca.markets/support/redistribute-alpaca-api). Se entrega el **script documentado**, alternativa permitida por el enunciado, y se excluyen de Git las descargas y los resultados derivados. Las fixtures de los tests son inventadas, no cotizaciones redistribuidas.
+`>>` Origen: [Alpaca Market Data API](https://docs.alpaca.markets/us/docs/about-market-data-api), endpoint `https://data.alpaca.markets/v2/stocks/bars`. Alpaca [prohíbe redistribuir los datos obtenidos mediante su API](https://alpaca.markets/support/redistribute-alpaca-api). Se entrega el **script documentado**, alternativa permitida por el enunciado, y se excluyen de Git las descargas y los resultados derivados. Las fixtures de los tests y la [muestra versionada](data/sample/acciones_muestra.csv) son **sintéticas**, no cotizaciones redistribuidas.
 
 `>` Para reproducir la descarga, instalar la [CLI oficial de Alpaca](https://docs.alpaca.markets/us/docs/alpacas-cli), iniciar sesión con `alpaca profile login` y ejecutar:
 
@@ -108,7 +108,28 @@ python -m acciones_app.cli \
   --output data/processed/acciones.csv
 ```
 
-`~>` También se admite un lote `.jsonl` o `.jsonl.gz` de la extracción masiva; sus campos compactos se normalizan al mismo esquema. Se carga el archivo elegido en memoria: para la entrega se recomienda el CSV de diez símbolos y, para la colección masiva, procesar un lote cada vez.
+`~>` También se admite un lote `.jsonl` o `.jsonl.gz` de la extracción masiva; sus campos compactos se normalizan al mismo esquema y se ignoran las líneas en blanco. Se carga el archivo elegido en memoria: para la entrega se recomienda el CSV de diez símbolos y, para la colección masiva, procesar un lote cada vez.
+
+### Ejecución sin red con la muestra sintética
+
+`>>` [data/sample/acciones_muestra.csv](data/sample/acciones_muestra.csv) es una muestra **SINTÉTICA**: **no contiene cotizaciones de Alpaca** ni de ningún otro proveedor, así que se puede versionar sin infringir su licencia. Tiene el mismo esquema que el CSV descargado (`symbol,timestamp,open,high,low,close,volume,trade_count,vwap`), **301 filas** de cuatro símbolos ficticios (`FICT.A` a `FICT.D`, 75 sesiones laborables desde el 2 de enero de 2026) y filas sucias a propósito: un duplicado `symbol`/`timestamp`, un OHLC incoherente, un volumen negativo, una fecha inexistente y un `vwap` fuera de rango que solo genera aviso.
+
+`>` La genera de forma determinista, con semilla fija y sin red, [scripts/generar_muestra_acciones.py](scripts/generar_muestra_acciones.py):
+
+```bash
+python scripts/generar_muestra_acciones.py            # >> reescribe data/sample/acciones_muestra.csv
+python scripts/generar_muestra_acciones.py --help     # >> --output, --seed, --sessions
+```
+
+`>` Con ella cualquier revisor puede validar la Parte B **sin cuenta de Alpaca, sin el binario `alpaca` y sin red**:
+
+```bash
+python -m acciones_app.cli \
+  --input data/sample/acciones_muestra.csv \
+  --output data/processed/acciones.csv
+```
+
+`=>` Resultado esperado: **296 válidas y 5 inválidas** (las dos copias del duplicado, el OHLC incoherente, el volumen negativo y la fecha inválida), un `WARNING` por el `vwap` atípico y las tres métricas para los cuatro símbolos. Un test de integración ejecuta este mismo comando y comprueba los recuentos y los valores de las métricas; otro comprueba que el CSV versionado coincide byte a byte con el que produce el generador.
 
 ### Esquema y validación
 
