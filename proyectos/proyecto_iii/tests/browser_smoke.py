@@ -17,14 +17,16 @@ def main() -> None:
     parser.add_argument("--expect-pipeline", action="store_true",
                         help="Exigir que /api/v1/pipeline (DSIA_JOURNAL) sirva el journal indicado")
     parser.add_argument("--kind", default="Simulación sintética")
+    parser.add_argument("--api-key", help="Valor de X-API-Key si el servicio define DSIA_API_KEY")
     args = parser.parse_args()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=args.chrome)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         errors = []
-        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("pageerror", lambda error: errors.append((str(error), "")))
         # > Las violaciones de CSP llegan como errores de consola, no como pageerror.
-        page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+        page.on("console", lambda message: errors.append((message.text, message.location.get("url", "")))
+                if message.type == "error" else None)
         with page.expect_response(lambda response: response.url.endswith("/api/v1/snapshot")) as pending:
             page.goto(args.url)
         response = pending.value
@@ -65,6 +67,8 @@ def main() -> None:
         expect(page.locator("#inputs tr")).to_have_count(len(payload.get("input_summary") or []))
         symbol = ranked[0]["symbol"]
         page.get_by_role("combobox", name="Símbolo").select_option(symbol)
+        if args.api_key:
+            page.locator("#analyze-key").fill(args.api_key)
         with page.expect_response(lambda r: r.url.endswith("/api/v1/analyze")) as analyzed:
             page.get_by_role("button", name="Explicar símbolo").click()
         answer = analyzed.value
@@ -98,7 +102,7 @@ def main() -> None:
         page.set_viewport_size({"width": 390, "height": 840})
         assert page.locator("body").evaluate("(body) => body.scrollWidth") <= 390
         # El 503 simulado del análisis registra un error de recurso en consola; es el único admitido.
-        unexpected = [error for error in errors if "503" not in error]
+        unexpected = [text for text, url in errors if not ("503" in text and url.endswith("/api/v1/analyze"))]
         assert unexpected == [], unexpected
         browser.close()
     print("OK · API, salud y operación, datos de entrada, análisis y su error, ranking, filtro, cortes y móvil")
