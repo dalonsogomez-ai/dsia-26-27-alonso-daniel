@@ -36,3 +36,9 @@ def test_alpaca_keys_reach_the_build_only_as_a_secret_mount():
     assert "build auto --secrets-file /run/secrets/alpaca_env" in dockerfile
     assert not any(line.startswith(("ARG ALPACA", "ENV ALPACA")) for line in dockerfile.splitlines())
     assert "alpaca.env" in dockerignore
+
+
+def test_container_starts_through_the_refreshing_entrypoint():
+    dockerfile = (ROOT / "proyectos/proyecto_iii/Dockerfile").read_text()
+    assert dockerfile.rstrip().endswith('CMD ["python", "-m", "dsia_web.serve"]')
+    assert "--start-period=120s" in dockerfile
