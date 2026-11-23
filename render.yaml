@@ -4,8 +4,9 @@
 #   - con el secret file `alpaca.env` (ALPACA_PAPER_API_KEY_ID y ALPACA_PAPER_API_SECRET_KEY)
 #     descarga barras diarias reales de Alpaca hasta ayer, reentrena y publica solo predicciones;
 #   - sin él, publica la demo sintética reproducible.
-# Los secret files no se declaran aquí: se crean en el panel (Environment → Secret Files).
-# Para refrescar los datos sin commit nuevo: Manual Deploy → Clear build cache & deploy.
+# Las claves (variables de entorno o secret file) se crean en el panel, nunca aquí. Al arrancar,
+# dsia_web.serve refresca el informe con datos hasta ayer si hay credenciales.
+# Para forzar datos nuevos: Manual Deploy → Restart service.
 services:
   - type: web
     name: dsia-swarmtrader
@@ -25,4 +26,9 @@ services:
       - key: DSIA_API_KEY
         sync: false
       - key: HF_TOKEN
+        sync: false
+      # Datos reales: dsia_web.serve las lee al arrancar (no llegan al build de Docker).
+      - key: ALPACA_PAPER_API_KEY_ID
+        sync: false
+      - key: ALPACA_PAPER_API_SECRET_KEY
         sync: false
