@@ -58,12 +58,17 @@ jobs:
         env:
           PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
         run: python -m pytest -q --cov=dsia_web --cov-report=term-missing proyectos/proyecto_iii/tests/test_web.py
+      - name: Proyecto III · ejecutar el lote y registrar etapas
+        id: lote
+        env:
+          PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
+        run: |
+          python -m dsia_web.build demo --work runs/dsia-demo/work --output runs/dsia-demo/snapshot.json --journal runs/dsia-evidence/pipeline.jsonl
       - name: Proyecto III · navegador contra backend real
         env:
           PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
         run: |
           python -m playwright install --with-deps chromium --only-shell
-          python -m dsia_web.build demo --work runs/dsia-demo/work --output runs/dsia-demo/snapshot.json
           python -m uvicorn dsia_web.app:app --host 127.0.0.1 --port 8765 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
@@ -72,12 +77,16 @@ jobs:
             kill -0 "$server_pid"
             sleep 1
           done
-          mkdir -p runs/dsia-evidence
-          python proyectos/proyecto_iii/tests/browser_smoke.py http://127.0.0.1:8765/ --screenshot runs/dsia-evidence/dashboard.png
+          PYTHON=python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8765
+          python proyectos/proyecto_iii/tests/browser_smoke.py http://127.0.0.1:8765/ \
+            --screenshot runs/dsia-evidence/dashboard.png --journal runs/dsia-evidence/pipeline.jsonl
       - name: Evidencia del dashboard sintético
+        if: ${{ !cancelled() && (steps.lote.outcome == 'success' || steps.lote.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dsia-dashboard-sintetico
-          path: runs/dsia-evidence/dashboard.png
+          path: |
+            runs/dsia-evidence/dashboard.png
+            runs/dsia-evidence/pipeline.jsonl
           if-no-files-found: error
           retention-days: 30

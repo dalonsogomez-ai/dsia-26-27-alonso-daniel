@@ -14,7 +14,7 @@ Desde esta carpeta, Python **3.12** y un entorno propio del Proyecto II:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m swarmtrade_app demo-data --output data/demo.csv --seed 42
+python -m swarmtrade_app demo-data --output data/demo.csv --sessions 680 --symbols 8 --seed 42
 python -m swarmtrade_app inspect --data data/demo.csv --output runs/demo-inspection
 python -m swarmtrade_app train --data data/demo.csv --run runs/demo --data-kind synthetic
 python -m swarmtrade_app evaluate --run runs/demo
@@ -39,6 +39,17 @@ Se reservan 60/20/20 de fechas completas y se purgan etiquetas que cruzan fronte
 La ejecución sintética de referencia usa 680 sesiones, 8 símbolos y semilla 42. En validación, Ridge obtuvo RMSE 0,064383 frente a 0,065762 de Dummy y 0,065318 de Swarm. El holdout congelado de Ridge obtuvo RMSE 0,070995, MAE 0,055318 y R² −0,254941. Se genera con `dsia_web.build demo`, descrito en el Proyecto III. Para el histórico, el formato de entrada y las restricciones se documentan en [datos](data/README.md). Carga artefactos joblib propios y de procedencia conocida.
 
 Los notebooks marimo leen el CSV sintético y el run generados por la receta anterior. Puedes seleccionar otro CSV con `DSIA_DATA_PATH`, otro directorio de EDA con `DSIA_EDA_DIR` y otra ejecución con `DSIA_RUN_DIR`. Abre los notebooks desde la carpeta del Proyecto II, por ejemplo con `marimo edit ml_pipeline/02_prep.py`.
+
+### Reproducir el histórico autorizado
+
+Desde el entorno del II, define `DSIA_BARS_CSV` con el CSV local descrito en [el contrato de datos](data/README.md). Usa un directorio nuevo para entrenar. Si ya tienes un run evaluado con ese CSV, reutiliza sus artefactos para inferir y para la [demo histórica del III](../proyecto_iii/README.md#informe-con-el-histórico-del-proyecto-ii).
+
+```bash
+python -m swarmtrade_app train --data "$DSIA_BARS_CSV" --run runs/historico --data-kind alpaca
+python -m swarmtrade_app evaluate --run runs/historico
+python -m swarmtrade_app run --data "$DSIA_BARS_CSV" --artifact runs/historico/model.joblib \
+  --output runs/historico/report.json --provider mock
+```
 
 ## > Elegir una acción o combinación sin diversificación forzada
 
@@ -92,9 +103,9 @@ python -m swarmtrade_app paper-execute --plan runs/actual/paper-plan.json --jour
 | `ml_pipeline/` | Tracker, helper y cuatro notebooks de inspección/evidencia |
 | `tests/` | Unitarios e integración, sockets bloqueados por defecto |
 
-Para revisar las figuras: `python -m marimo edit ml_pipeline/01_eda.py` (también 02_prep, 03_model, 04_eval). Ejecutar desde esta carpeta; 01 lee el CSV local del Proyecto I por defecto y debe cambiarse a `data/demo.csv` si no se dispone de él. Las demás fases muestran evidencias existentes y no vuelven a tocar el test al abrirse. Los perfiles/figuras reales y runs permanecen locales e ignorados.
+Para revisar las figuras: `python -m marimo edit ml_pipeline/01_eda.py` (también 02_prep, 03_model, 04_eval). Ejecutar desde esta carpeta; `01_eda.py` lee `data/demo.csv` por defecto; para inspeccionar las barras autorizadas del Proyecto I, exporta `DSIA_DATA_PATH` con su ruta. Las demás fases muestran evidencias existentes y no vuelven a tocar el test al abrirse. Los perfiles/figuras reales y runs permanecen locales e ignorados.
 
-El [Proyecto III](../proyecto_iii/README.md) reutiliza `infer` y `AIClient.analyze` para materializar un snapshot. La API de lectura y el dashboard muestran métricas y procedencia. El adaptador paper permanece separado del servicio web. [Plan de seguimiento](MONITORIZACION.md) · [Diagrama](../../docs/ARQUITECTURA_DSIA.md)
+El [Proyecto III](../proyecto_iii/README.md) reutiliza `infer` y `AIClient.analyze` para materializar un snapshot. La API de lectura y el dashboard muestran métricas y procedencia. El adaptador paper permanece separado del servicio web. [Plan de seguimiento](MONITORIZACION.md) · [Trazabilidad de requisitos](../../docs/TRAZABILIDAD_DSIA.md#proyecto-ii--automatización-e-integración) · [Diagrama Excalidraw del II](../../docs/ARQUITECTURA_DSIA.md#proyecto-ii--entrenamiento-e-inferencia)
 
 ## >> Cobertura del enunciado y entrega
 

@@ -1,6 +1,7 @@
 """Prueba reproducible contra la app en ejecución, con Chromium real."""
 
 import argparse
+import json
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -12,6 +13,7 @@ def main() -> None:
     parser.add_argument("url")
     parser.add_argument("--chrome", help="Ruta a un navegador Chromium instalado")
     parser.add_argument("--screenshot", type=Path)
+    parser.add_argument("--journal", type=Path)
     parser.add_argument("--kind", default="Simulación sintética")
     args = parser.parse_args()
     with sync_playwright() as playwright:
@@ -27,6 +29,11 @@ def main() -> None:
         expect(page.get_by_role("status")).to_have_text(args.kind)
         expect(page.locator("#predictions tr")).to_have_count(len(payload["predictions"]))
         assert payload["run_id"] == page.locator("#run").text_content()
+        if args.journal:
+            events = [json.loads(line) for line in args.journal.read_text().splitlines()]
+            final = events[-1]
+            assert (final["stage"], final["status"]) == ("publish_snapshot", "succeeded")
+            assert final["run_id"] == payload["run_id"]
         ranked = sorted(payload["predictions"], key=lambda row: -row["predicted_return"])
         assert page.locator("#predictions th").all_text_contents() == [row["symbol"] for row in ranked]
         health = page.request.get(urljoin(args.url, "/health"))

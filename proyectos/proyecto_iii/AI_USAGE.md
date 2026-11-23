@@ -9,3 +9,7 @@
 El proveedor `mock` produce la explicación de la demo sin llamar a un modelo externo. El adaptador Hugging Face heredado se documenta en el Proyecto II. Las métricas y las estimaciones provienen del pipeline sklearn y de sus artefactos. No se enviaron datos de Alpaca a proveedores externos durante estas comprobaciones.
 
 [Arquitectura y trazabilidad](../../docs/ARQUITECTURA_DSIA.md) · [Uso de IA del Proyecto II](../proyecto_ii/AI_USAGE.md)
+
+## 23 de noviembre de 2026 · Auditoría y RC
+
+Se pidió contrastar los enunciados y ejemplos docentes con el flujo real, revisar los riesgos del arranque y documentar la ejecución. Codex y sus agentes de revisión aportaron la matriz de trazabilidad, el journal y las pruebas del camino crítico. Se aceptaron cambios comprobables con pytest, smoke HTTP e integración en Chromium. Se mantuvo la explicación externa como integración opcional de lote y el empaquetado local como opción de despliegue. El modelo de desarrollo concreto se registra como no disponible en el historial de esta entrega. Las fuentes y la evidencia están enlazadas en la [auditoría](../../docs/TRAZABILIDAD_DSIA.md) y el [RC](RELEASE.md).

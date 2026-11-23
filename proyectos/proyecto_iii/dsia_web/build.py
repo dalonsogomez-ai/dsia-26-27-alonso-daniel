@@ -7,9 +7,12 @@ import json
 import logging
 import os
 import tempfile
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
+from time import perf_counter_ns
+from typing import Iterator, TextIO
 
 from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest
 from swarmtrade_app.data import DataError, generate_demo
@@ -20,6 +23,40 @@ from swarmtrade_app.training import evaluate_holdout, train_prepared
 from .snapshot import Explanation, Metrics, Period, Prediction, Snapshot, create_snapshot
 
 LOG = logging.getLogger(__name__)
+
+
+class RunJournal:
+    """Eventos de etapas del lote para diagnóstico y trazabilidad."""
+
+    def __init__(self, stream: TextIO | None = None) -> None:
+        self.stream = stream
+
+    @contextmanager
+    def stage(self, stage: str, **fields: str) -> Iterator[None]:
+        if self.stream is None:
+            yield
+            return
+
+        def emit(status: str, **details: str | float) -> None:
+            entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "stage": stage,
+                "status": status,
+                **fields,
+                **details,
+            }
+            print(json.dumps(entry), file=self.stream, flush=True)
+
+        emit("started")
+        start = perf_counter_ns()
+        try:
+            yield
+        except Exception as error:
+            emit("failed", duration_ms=(perf_counter_ns() - start) / 1e6,
+                 error_type=type(error).__name__)
+            raise
+        else:
+            emit("succeeded", duration_ms=(perf_counter_ns() - start) / 1e6)
 
 
 def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
@@ -59,14 +96,20 @@ def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
     })
 
 
-def demo(work: Path) -> Snapshot:
-    work.mkdir(parents=True, exist_ok=False)
-    data = generate_demo(work / "bars.csv", sessions=680, symbols=8, seed=42)
+def demo(work: Path, journal: RunJournal | None = None) -> Snapshot:
+    journal = journal or RunJournal()
     run = work / "model"
-    prepare(data, run, data_kind="synthetic")
-    train_prepared(run)
-    evaluate_holdout(run)
-    return from_run(data, run)
+    with journal.stage("generate_bars"):
+        work.mkdir(parents=True, exist_ok=False)
+        data = generate_demo(work / "bars.csv", sessions=680, symbols=8, seed=42)
+    with journal.stage("prepare"):
+        prepare(data, run, data_kind="synthetic")
+    with journal.stage("train"):
+        train_prepared(run)
+    with journal.stage("holdout"):
+        evaluate_holdout(run)
+    with journal.stage("infer_snapshot"):
+        return from_run(data, run)
 
 
 def write_snapshot(snapshot: Snapshot, output: Path) -> None:
@@ -89,13 +132,33 @@ def main(argv: list[str] | None = None) -> int:
     existing_parser.add_argument("--provider", choices=("mock", "hf"), default="mock")
     for mode in (demo_parser, existing_parser):
         mode.add_argument("--output", type=Path, required=True)
+        mode.add_argument("--journal", type=Path, help="Registro JSONL de etapas en un archivo nuevo")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         if args.output.exists():
             raise FileExistsError("El informe de salida ya existe")
-        snapshot = demo(args.work) if args.mode == "demo" else from_run(args.data, args.run, args.provider)
-        write_snapshot(snapshot, args.output)
+        stream = nullcontext(None)
+        if args.journal is not None:
+            journal_path = args.journal.resolve()
+            output_path = args.output.resolve()
+            if journal_path.is_relative_to(output_path) or output_path.is_relative_to(journal_path):
+                raise ValueError("--journal y --output requieren rutas independientes")
+            if args.mode == "demo":
+                work_path = args.work.resolve()
+                if journal_path.is_relative_to(work_path) or work_path.is_relative_to(journal_path):
+                    raise ValueError("--journal debe estar fuera de --work")
+            journal_path.parent.mkdir(parents=True, exist_ok=True)
+            stream = journal_path.open("x", encoding="utf-8")
+        with stream as log:
+            journal = RunJournal(log)
+            if args.mode == "demo":
+                snapshot = demo(args.work, journal)
+            else:
+                with journal.stage("infer_snapshot"):
+                    snapshot = from_run(args.data, args.run, args.provider)
+            with journal.stage("publish_snapshot", run_id=snapshot.run_id):
+                write_snapshot(snapshot, args.output)
     except (DataError, OSError, ValueError, KeyError, RuntimeError) as exc:
         LOG.error("Generación del informe fallida: %s", exc)
         return 2

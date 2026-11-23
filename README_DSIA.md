@@ -8,7 +8,7 @@
 
 ## Demo y evidencias
 
-La [guía del III](proyectos/proyecto_iii/README.md) reproduce la demo en un clon limpio con Python 3.12, datos sintéticos y el proveedor `mock`. El [diagrama](docs/ARQUITECTURA_DSIA.md) sigue los flujos de datos, control y negocio. El [workflow](.github/workflows/ci.yml) ejecuta las tres suites y publica una captura sintética del dashboard como artefacto.
+La [guía del III](proyectos/proyecto_iii/README.md) reproduce la demo en un clon limpio con Python 3.12, datos sintéticos y el proveedor `mock`. Los [diagramas de Excalidraw](docs/ARQUITECTURA_DSIA.md) muestran las dependencias de los tres proyectos. El [workflow](.github/workflows/ci.yml) ejecuta las tres suites y publica una captura sintética del dashboard junto al journal del lote. La [auditoría de los Proyectos II y III](docs/TRAZABILIDAD_DSIA.md) enlaza cada requisito con su evidencia.
 
 - **Proyecto I.** Los módulos loader, validador, métricas y CLI se comprueban en A y B. El conjunto preserva el historial de la entrega publicada. El extractor documentado permite obtener las barras con autorización. La suite usa fixtures inventadas. [Verificación previa del I](proyectos/proyecto_i/VERIFICACION.md)
 - **Proyecto II.** Se congela el candidato elegido por validation antes de evaluar el holdout. La llamada Hugging Face autenticada y el paper externo quedan fuera de la evidencia verificada. El enunciado admite el mock con cliente tipado y configuración documentada. Se conserva la cronología disponible de la adaptación. [Decisión y evaluación](proyectos/proyecto_ii/README.md) · [Citación](proyectos/proyecto_ii/AI_USAGE.md)
