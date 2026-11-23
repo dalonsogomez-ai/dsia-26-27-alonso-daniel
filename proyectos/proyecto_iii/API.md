@@ -9,6 +9,7 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 | GET | /api/v1/snapshot | 200 con procedencia, métricas, predicciones y explicación, o 503 con error tipado |
 | GET | /api/v1/snapshot/schema | 200 con JSON Schema del documento |
 | POST | /api/v1/analyze | 200 con explicación de IA del símbolo, `provider`, `model`, `request_id` y `latency_ms`; 400, 401, 404, 413, 415, 422 o 503 tipados (ver abajo) |
+| GET | /api/v1/pipeline?limit=N | 200 con los últimos N eventos (1–50, 20 por defecto) del journal de `DSIA_JOURNAL`; 422 `invalid_limit`; 404 `journal_not_configured`; 503 `journal_unavailable` |
 | GET | /api/v1/predictions/{symbol} | 200 con predicción, posición en el ranking y resumen de entrada del símbolo; 422 `invalid_symbol` si no cumple `^[A-Z0-9.]{1,32}$`; 404 `symbol_not_found`; 503 `snapshot_unavailable` |
 
 ## Análisis bajo demanda
@@ -32,6 +33,10 @@ Servicio de lectura de un snapshot construido y validado fuera del servidor. El 
 | 503 | `snapshot_unavailable` / `ai_unavailable` | Sin snapshot, o `AIClientError` (proveedor caído, sin `HF_TOKEN`, configuración inválida) |
 
 `AnalysisRequest` del II no tiene campo de pregunta libre, así que la API no acepta `question`. Ni el token ni el texto del proveedor se escriben en los logs: la línea INFO `analyze` registra `request_id`, símbolo, proveedor, modelo y `latency_ms`.
+
+## Journal del lote
+
+`GET /api/v1/pipeline` lee como máximo los últimos 64 KiB del JSONL y devuelve `{"events": [...], "returned": n, "skipped_lines": k, "last_run_id": "…"}`. Las líneas corruptas o sin `stage`/`status` se cuentan en `skipped_lines` y no rompen la respuesta. De cada evento solo salen `timestamp`, `stage`, `status`, `duration_ms`, `run_id`, `error_type`, `rows`, `symbols` e `input_sha256`; cualquier otro campo, como una ruta, se descarta.
 
 ## Salud
 

@@ -24,6 +24,7 @@ from starlette.staticfiles import StaticFiles
 from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest
 
 from .ai import client_from_env
+from .journal import read_recent_events
 from .observability import ObservabilityMiddleware, RequestMetrics, request_id
 from .snapshot import Snapshot, read_snapshot
 
@@ -32,6 +33,7 @@ STATIC = Path(__file__).with_name("static")
 SYMBOL_PATTERN = r"^[A-Z0-9.]{1,32}$"
 SYMBOL = re.compile(SYMBOL_PATTERN)
 MAX_BODY_BYTES = 2048
+DEFAULT_EVENTS, MAX_EVENTS = 20, 50
 
 
 class AnalyzeBody(BaseModel):
@@ -194,12 +196,30 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
             "model": answer.model, "request_id": rid, "latency_ms": latency_ms,
         }, headers={"Cache-Control": "no-store"})
 
+    async def pipeline(request: Request) -> JSONResponse:
+        raw = request.query_params.get("limit", str(DEFAULT_EVENTS))
+        if not raw.isdigit() or not 1 <= int(raw) <= MAX_EVENTS:
+            return error_response(request, 422, "invalid_limit", f"limit debe ser un entero entre 1 y {MAX_EVENTS}.")
+        journal: Path | None = request.app.state.journal_path
+        if journal is None:
+            return error_response(request, 404, "journal_not_configured", "DSIA_JOURNAL no está configurado.")
+        try:
+            events, skipped = await run_in_threadpool(read_recent_events, journal, int(raw))
+        except OSError as exc:
+            LOG.warning("journal_unavailable error_type=%s", type(exc).__name__)
+            return error_response(request, 503, "journal_unavailable", "No se puede leer el journal del lote.")
+        return JSONResponse({
+            "events": events, "returned": len(events), "skipped_lines": skipped,
+            "last_run_id": next((event["run_id"] for event in reversed(events) if "run_id" in event), None),
+        }, headers={"Cache-Control": "no-store"})
+
     metrics = RequestMetrics()
     application = Starlette(lifespan=lifespan, routes=[
         Route("/", dashboard), Route("/health", health),
         Route("/api/v1/snapshot", report), Route("/api/v1/snapshot/schema", schema),
         Route("/api/v1/predictions/{symbol}", prediction),
         Route("/api/v1/analyze", analyze, methods=["POST"]),
+        Route("/api/v1/pipeline", pipeline),
         Mount("/static", app=StaticFiles(directory=STATIC)),
     ], middleware=[Middleware(ObservabilityMiddleware, metrics=metrics)])
     application.state.metrics = metrics
