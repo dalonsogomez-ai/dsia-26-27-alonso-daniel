@@ -17,17 +17,27 @@ def test_price_return_by_symbol_and_sorting(bars_frame):
 
 
 def test_known_average_volume(bars_frame):
+    # Arrange: volúmenes de AAA = 10, 20, 30 y de BBB = 100, 200, 300.
     valid, _ = validate_bars(bars_frame)
+
+    # Act
     result = metrics.average_volume_by_symbol(valid).set_index("symbol")
+
+    # Assert: medias calculadas a mano, sin mezclar símbolos.
     assert result.loc["AAA", "average_daily_volume"] == 20
     assert result.loc["BBB", "average_daily_volume"] == 200
 
 
 def test_known_sample_volatility(bars_frame):
+    # Arrange
     valid, _ = validate_bars(bars_frame)
-    result = metrics.volatility_by_symbol(valid.iloc[::-1]).set_index("symbol")
     # => Retornos de AAA: +0.10 y -0.10; std muestral = sqrt(0.02).
     expected = sqrt(0.02) * sqrt(252) * 100
+
+    # Act: barras en orden inverso para comprobar que la métrica ordena por fecha.
+    result = metrics.volatility_by_symbol(valid.iloc[::-1]).set_index("symbol")
+
+    # Assert
     assert result.loc["AAA", "annualized_volatility_pct"] == pytest.approx(expected)
     assert result.loc["AAA", "return_observations"] == 2
 

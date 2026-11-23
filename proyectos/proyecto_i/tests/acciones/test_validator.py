@@ -51,8 +51,13 @@ def test_zero_counts_are_valid(bars_frame):
 
 
 def test_all_duplicate_members_are_rejected(bars_frame):
+    # Arrange: se repite la primera barra (misma clave symbol/timestamp).
     frame = pd.concat([bars_frame, bars_frame.iloc[:1]], ignore_index=True)
+
+    # Act
     valid, invalid = validate_bars(frame)
+
+    # Assert: se rechazan las dos copias, no solo la segunda.
     assert len(valid) == 5 and len(invalid) == 2
     assert invalid["motivo"].str.contains("duplicados").all()
 
