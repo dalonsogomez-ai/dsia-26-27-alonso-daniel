@@ -23,7 +23,10 @@ from swarmtrade_app.pipeline import infer
 from swarmtrade_app.preparation import prepare
 from swarmtrade_app.training import evaluate_holdout, train_prepared
 
+from . import alpaca_source
 from .ai import client_from_env
+from .alpaca_source import (DEFAULT_START, DEFAULT_SYMBOLS, FEEDS, AlpacaCredentials, fetch_daily_bars,
+                            load_credentials, parse_symbols)
 from .snapshot import (Explanation, InputSummary, Metrics, Period, Prediction, Snapshot,
                        create_snapshot)
 
@@ -88,10 +91,12 @@ def summarize_inputs(bars: pd.DataFrame, horizon: int = 21, window: int = 63) ->
     return summary
 
 
-def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
+def from_run(data: Path, run: Path, provider: str = "mock", *, include_prices: bool = True) -> Snapshot:
     """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado.
 
     El cliente de IA toma modelo, timeout y proveedor de inferencia del entorno (``HF_*``).
+    Con ``include_prices=False`` el snapshot no lleva ``input_summary`` (cierres, retorno
+    realizado ni volatilidad): es lo que se publica con datos de Alpaca, que no se redistribuyen.
     """
     report, artifact, bars = infer(data, run / "model.joblib")
     validation = artifact["report"]
@@ -125,24 +130,44 @@ def from_run(data: Path, run: Path, provider: str = "mock") -> Snapshot:
         }),
         "predictions": [Prediction.model_validate(row) for row in report["predictions"]],
         "explanation": explanation,
-        "input_summary": summarize_inputs(bars, horizon=summary.horizon),
+        "input_summary": summarize_inputs(bars, horizon=summary.horizon) if include_prices else None,
     })
 
 
-def demo(work: Path, journal: RunJournal | None = None) -> Snapshot:
-    journal = journal or RunJournal()
-    run = work / "model"
-    with journal.stage("generate_bars"):
-        work.mkdir(parents=True, exist_ok=False)
-        data = generate_demo(work / "bars.csv", sessions=680, symbols=8, seed=42)
+def train_and_infer(data: Path, run: Path, journal: RunJournal, *, data_kind: str,
+                    include_prices: bool = True) -> Snapshot:
+    """Cadena común a la demo y a Alpaca: preparar, entrenar, un toque del holdout e inferir."""
     with journal.stage("prepare"):
-        prepare(data, run, data_kind="synthetic")
+        prepare(data, run, data_kind=data_kind)
     with journal.stage("train"):
         train_prepared(run)
     with journal.stage("holdout"):
         evaluate_holdout(run)
     with journal.stage("infer_snapshot"):
-        return from_run(data, run)
+        return from_run(data, run, include_prices=include_prices)
+
+
+def demo(work: Path, journal: RunJournal | None = None) -> Snapshot:
+    journal = journal or RunJournal()
+    with journal.stage("generate_bars"):
+        work.mkdir(parents=True, exist_ok=False)
+        data = generate_demo(work / "bars.csv", sessions=680, symbols=8, seed=42)
+    return train_and_infer(data, work / "model", journal, data_kind="synthetic")
+
+
+def alpaca(work: Path, credentials: AlpacaCredentials, journal: RunJournal | None = None, *,
+           symbols: tuple[str, ...] = DEFAULT_SYMBOLS, start: date = DEFAULT_START,
+           feed: str = "sip") -> Snapshot:
+    """Descargar barras reales de Alpaca, reentrenar y publicar solo predicciones y métricas."""
+    journal = journal or RunJournal()
+    data = work / "bars.csv"
+    with journal.stage("download_bars") as details:
+        work.mkdir(parents=True, exist_ok=False)
+        details.update(fetch_daily_bars(data, credentials, symbols=symbols, start=start, feed=feed,
+                                        client_factory=alpaca_source.default_client))
+    with journal.stage("validate_input") as details:
+        details.update(validate_input(data))
+    return train_and_infer(data, work / "model", journal, data_kind="alpaca", include_prices=False)
 
 
 def write_snapshot(snapshot: Snapshot, output: Path) -> None:
@@ -164,7 +189,18 @@ def main(argv: list[str] | None = None) -> int:
     existing_parser.add_argument("--run", type=Path, required=True)
     existing_parser.add_argument("--provider", choices=("mock", "hf"),
                                  default=os.getenv("AI_PROVIDER", "mock"))
-    for mode in (demo_parser, existing_parser):
+    # -> alpaca: descarga real obligatoria. auto: Alpaca si hay credenciales; si no, la demo (CI y local).
+    live_parsers = [modes.add_parser(name) for name in ("alpaca", "auto")]
+    for mode in live_parsers:
+        mode.add_argument("--work", type=Path, required=True)
+        mode.add_argument("--secrets-file", type=Path,
+                          help="Fichero .env con ALPACA_PAPER_API_KEY_ID y ALPACA_PAPER_API_SECRET_KEY")
+        mode.add_argument("--symbols", default=os.getenv("DSIA_SYMBOLS"),
+                          help="Símbolos separados por comas (por defecto, el universo del Proyecto I)")
+        mode.add_argument("--start", type=date.fromisoformat,
+                          default=date.fromisoformat(os.getenv("DSIA_START") or DEFAULT_START.isoformat()))
+        mode.add_argument("--feed", choices=FEEDS, default=os.getenv("DSIA_ALPACA_FEED") or "sip")
+    for mode in (demo_parser, existing_parser, *live_parsers):
         mode.add_argument("--output", type=Path, required=True)
         mode.add_argument("--journal", type=Path, help="Registro JSONL de etapas en un archivo nuevo")
     args = parser.parse_args(argv)
@@ -172,13 +208,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.output.exists():
             raise FileExistsError("El informe de salida ya existe")
+        credentials = None
+        if args.mode in ("alpaca", "auto"):
+            credentials = load_credentials(args.secrets_file)
+            if credentials is None and args.mode == "alpaca":
+                raise DataError("Faltan las credenciales de Alpaca (entorno o --secrets-file)")
+            if credentials is None:
+                LOG.warning("Sin credenciales de Alpaca: se publica la demo sintética")
         stream = nullcontext(None)
         if args.journal is not None:
             journal_path = args.journal.resolve()
             output_path = args.output.resolve()
             if journal_path.is_relative_to(output_path) or output_path.is_relative_to(journal_path):
                 raise ValueError("--journal y --output requieren rutas independientes")
-            if args.mode == "demo":
+            if args.mode != "from-run":
                 work_path = args.work.resolve()
                 if journal_path.is_relative_to(work_path) or work_path.is_relative_to(journal_path):
                     raise ValueError("--journal debe estar fuera de --work")
@@ -186,8 +229,11 @@ def main(argv: list[str] | None = None) -> int:
             stream = journal_path.open("x", encoding="utf-8")
         with stream as log:
             journal = RunJournal(log)
-            if args.mode == "demo":
+            if args.mode == "demo" or (args.mode == "auto" and credentials is None):
                 snapshot = demo(args.work, journal)
+            elif args.mode in ("alpaca", "auto"):
+                snapshot = alpaca(args.work, credentials, journal, symbols=parse_symbols(args.symbols),
+                                  start=args.start, feed=args.feed)
             else:
                 with journal.stage("validate_input") as details:
                     details.update(validate_input(args.data))
