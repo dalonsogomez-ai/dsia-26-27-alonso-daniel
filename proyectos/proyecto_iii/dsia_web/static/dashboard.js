@@ -74,6 +74,7 @@ function render(report) {
   });
   document.getElementById("splits").replaceChildren(...periods);
   const predictions = [...report.predictions].sort((a, b) => b.predicted_return - a.predicted_return);
+  renderSpotlight(predictions[0], report.horizon_sessions);
   renderPredictions(predictions);
   document.getElementById("filter").addEventListener("input", () => renderPredictions(predictions));
   renderInputs(report.input_summary);
@@ -84,6 +85,15 @@ function render(report) {
   });
   document.getElementById("analyze-symbol").replaceChildren(...options);
   document.getElementById("results").hidden = false;
+}
+
+function renderSpotlight(best, horizon) {
+  if (!best) return;
+  text("top-symbol", best.symbol);
+  const value = document.getElementById("top-return");
+  value.textContent = (best.predicted_return > 0 ? "+" : "") + percent.format(best.predicted_return);
+  value.classList.toggle("neg", best.predicted_return < 0);
+  text("top-note", `Retorno predicho a ${horizon ?? 21} sesiones · señal de investigación, no recomendación`);
 }
 
 function renderInputs(summary) {

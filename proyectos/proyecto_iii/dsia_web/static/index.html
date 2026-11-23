@@ -3,30 +3,134 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SwarmTrader · predicción de retorno a 21 sesiones con sklearn, API y panel de operación (Proyecto III DSIA).">
+  <meta name="theme-color" content="#070d18">
   <title>SwarmTrader · Laboratorio DSIA</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/dashboard.js" defer></script>
 </head>
 <body>
   <header class="top">
     <div class="wrap top-inner">
-      <div class="brand"><span class="mark" aria-hidden="true">↗</span> SwarmTrader <span class="course">DSIA</span></div>
-      <a href="/api/v1/snapshot">Informe JSON ↗</a>
+      <a class="brand" href="/" aria-label="SwarmTrader, inicio">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 22 L12 15 L17 19 L27 8" /><path d="M20 8 H27 V15" /></svg>
+        <span>SwarmTrader</span> <span class="course">DSIA</span>
+      </a>
+      <nav class="nav" aria-label="Enlaces de la API">
+        <a href="/health">Salud</a>
+        <a href="/api/v1/metrics">Métricas</a>
+        <a class="pill" href="/api/v1/snapshot">Informe JSON ↗</a>
+      </nav>
     </div>
   </header>
   <main class="wrap">
     <section class="hero" aria-labelledby="title">
-      <div>
+      <div class="hero-copy">
         <p class="eyebrow">Laboratorio de investigación bursátil</p>
-        <h1 id="title">Predicción de retorno<br>a 21 sesiones</h1>
-        <p class="intro">Explora la salida del modelo y comprueba su rendimiento frente al baseline.</p>
+        <h1 id="title">Predicción de retorno<br><span class="grad">a 21 sesiones</span></h1>
+        <p class="intro">Modelo scikit-learn entrenado por lotes, servido por una API real y explicado con IA. Explora la salida del modelo y comprueba su rendimiento frente al baseline.</p>
+        <p id="status" class="status" role="status">Cargando informe…</p>
       </div>
-      <p id="status" class="status" role="status">Cargando informe…</p>
+      <aside class="spotlight" aria-labelledby="spotlight-title">
+        <p id="spotlight-title" class="spotlight-label">Mejor señal estimada</p>
+        <p class="spotlight-symbol" id="top-symbol">—</p>
+        <p class="spotlight-value" id="top-return">—</p>
+        <p class="spotlight-note" id="top-note">Retorno predicho a 21 sesiones</p>
+      </aside>
     </section>
-    <section id="ops" class="card ops" aria-labelledby="ops-title">
+
+    <div id="results" hidden>
+      <section class="facts" aria-label="Resumen del informe">
+        <div class="fact"><span>Último dato</span><strong id="as-of"></strong></div>
+        <div class="fact"><span>Modelo seleccionado</span><strong id="model"></strong></div>
+        <div class="fact"><span>Universo</span><strong id="universe"></strong></div>
+        <div class="fact"><span>RMSE del holdout</span><strong id="rmse"></strong></div>
+      </section>
+
+      <div class="grid">
+        <section class="card" aria-labelledby="rank-title">
+          <div class="section-head">
+            <div><h2 id="rank-title"><span class="dot dot-a" aria-hidden="true"></span>Retornos estimados</h2><p>Ordenados por retorno predicho</p></div>
+            <label class="search">Filtrar símbolo <input id="filter" type="search" placeholder="p. ej. DEMO01"></label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Símbolo</th><th scope="col">Retorno estimado</th><th scope="col">Distribución</th></tr></thead>
+              <tbody id="predictions"></tbody>
+            </table>
+          </div>
+          <p id="count" class="note" aria-live="polite"></p>
+        </section>
+        <section class="card evidence" aria-labelledby="evidence-title">
+          <div class="section-head"><div><h2 id="evidence-title"><span class="dot dot-b" aria-hidden="true"></span>Evidencia del modelo</h2><p>Validation · RMSE menor es mejor</p></div></div>
+          <ul id="validation" class="metrics"></ul>
+          <dl class="eval">
+            <div><dt>MAE holdout</dt><dd id="mae"></dd></div>
+            <div><dt>R² holdout</dt><dd id="r2"></dd></div>
+            <div><dt>Evaluaciones del holdout</dt><dd id="touches"></dd></div>
+          </dl>
+          <p class="verdict">Ventaja económica sin demostrar</p>
+        </section>
+      </div>
+
+      <section class="card secondary feature" aria-labelledby="analyze-title">
+        <div class="section-head"><div><h2 id="analyze-title"><span class="dot dot-c" aria-hidden="true"></span>Explicar símbolo</h2>
+          <p>Lanza un análisis bajo demanda con el cliente de IA del Proyecto II mediante <code>POST /api/v1/analyze</code>.</p></div></div>
+        <form id="analyze-form" class="analyze">
+          <label>Símbolo <select id="analyze-symbol" name="symbol" required></select></label>
+          <label>Clave de API, si el servicio la exige <input id="analyze-key" type="password" autocomplete="off"></label>
+          <button id="analyze-submit" class="primary" type="submit">Explicar símbolo</button>
+        </form>
+        <div id="analyze-result" class="answer" aria-live="polite" hidden>
+          <p id="analyze-summary"></p>
+          <p id="analyze-meta" class="note"></p>
+        </div>
+        <p id="analyze-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section class="card secondary" aria-labelledby="inputs-title">
+        <div class="section-head"><div><h2 id="inputs-title"><span class="dot dot-a" aria-hidden="true"></span>Datos de entrada</h2><p>Resumen por símbolo de las barras hasta la fecha de corte</p></div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Símbolo</th><th scope="col">Sesiones</th><th scope="col">Último cierre</th><th scope="col">Retorno 21 sesiones</th><th scope="col">Volatilidad anual (63 s.)</th></tr></thead>
+            <tbody id="inputs"></tbody>
+          </table>
+        </div>
+        <p id="inputs-note" class="note"></p>
+      </section>
+    <details class="card secondary">
+      <summary>Cortes temporales y purga de etiquetas</summary>
+      <p class="note">La última etiqueta de cada bloque madura antes de comenzar el siguiente.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Bloque</th><th scope="col">Primera señal</th><th scope="col">Última señal</th><th scope="col">Última etiqueta</th><th scope="col">Filas</th></tr></thead>
+          <tbody id="splits"></tbody>
+        </table>
+      </div>
+    </details>
+    <section class="card secondary" aria-labelledby="explanation-title">
+      <h2 id="explanation-title"><span class="dot dot-c" aria-hidden="true"></span>Explicación del informe</h2>
+      <p id="explanation-source" class="note"></p>
+      <p id="explanation"></p>
+    </section>
+    <details class="card secondary">
+      <summary>Procedencia del informe</summary>
+      <dl class="provenance">
+        <dt>Identificador</dt><dd id="run"></dd>
+        <dt>Datos · SHA-256</dt><dd id="input-hash"></dd>
+        <dt>Modelo · SHA-256</dt><dd id="artifact-hash"></dd>
+        <dt>Versión sklearn</dt><dd id="sklearn"></dd>
+        <dt>Generado el</dt><dd id="generated"></dd>
+      </dl>
+      <a href="/api/v1/snapshot/schema">Ver contrato JSON Schema ↗</a>
+    </details>
+    </div>
+
+    <section id="ops" class="card ops secondary" aria-labelledby="ops-title">
       <div class="section-head">
-        <div><h2 id="ops-title">Operación</h2><p>Salud del servicio, métricas en memoria y último lote registrado</p></div>
-        <button id="ops-refresh" type="button">Actualizar</button>
+        <div><h2 id="ops-title"><span class="dot dot-b" aria-hidden="true"></span>Operación</h2><p>Salud del servicio, métricas en memoria y último lote registrado</p></div>
+        <button id="ops-refresh" type="button">↻ Actualizar</button>
       </div>
       <dl class="ops-facts">
         <div><dt>Estado</dt><dd id="ops-status">Consultando…</dd></div>
@@ -45,89 +149,17 @@
         </table>
       </div>
     </section>
-    <div id="results" hidden>
-      <section class="facts" aria-label="Resumen del informe">
-        <div><span>Último dato</span><strong id="as-of"></strong></div>
-        <div><span>Modelo seleccionado</span><strong id="model"></strong></div>
-        <div><span>Universo</span><strong id="universe"></strong></div>
-        <div><span>RMSE del holdout</span><strong id="rmse"></strong></div>
-      </section>
-      <div class="grid">
-        <section class="card" aria-labelledby="rank-title">
-          <div class="section-head">
-            <div><h2 id="rank-title">Retornos estimados</h2><p>Ordenados por retorno predicho</p></div>
-            <label class="search">Filtrar símbolo <input id="filter" type="search"></label>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th scope="col">Símbolo</th><th scope="col">Retorno estimado</th><th scope="col">Distribución</th></tr></thead>
-              <tbody id="predictions"></tbody>
-            </table>
-          </div>
-          <p id="count" class="note" aria-live="polite"></p>
-        </section>
-        <section class="card evidence" aria-labelledby="evidence-title">
-          <div class="section-head"><div><h2 id="evidence-title">Evidencia del modelo</h2><p>Validation · RMSE menor es mejor</p></div></div>
-          <ul id="validation" class="metrics"></ul>
-          <dl class="eval">
-            <div><dt>MAE holdout</dt><dd id="mae"></dd></div>
-            <div><dt>R² holdout</dt><dd id="r2"></dd></div>
-            <div><dt>Evaluaciones del holdout</dt><dd id="touches"></dd></div>
-          </dl>
-          <p class="verdict">Ventaja económica sin demostrar</p>
-        </section>
-      </div>
-      <section class="card secondary" aria-labelledby="inputs-title">
-        <div class="section-head"><div><h2 id="inputs-title">Datos de entrada</h2><p>Resumen por símbolo de las barras hasta la fecha de corte</p></div></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th scope="col">Símbolo</th><th scope="col">Sesiones</th><th scope="col">Último cierre</th><th scope="col">Retorno 21 sesiones</th><th scope="col">Volatilidad anual (63 s.)</th></tr></thead>
-            <tbody id="inputs"></tbody>
-          </table>
-        </div>
-        <p id="inputs-note" class="note"></p>
-      </section>
-      <section class="card secondary" aria-labelledby="analyze-title">
-        <h2 id="analyze-title">Explicar símbolo</h2>
-        <p class="note">Lanza un análisis bajo demanda con el cliente de IA del Proyecto II mediante <code>POST /api/v1/analyze</code>.</p>
-        <form id="analyze-form" class="analyze">
-          <label>Símbolo <select id="analyze-symbol" name="symbol" required></select></label>
-          <label>Clave de API, si el servicio la exige <input id="analyze-key" type="password" autocomplete="off"></label>
-          <button id="analyze-submit" type="submit">Explicar símbolo</button>
-        </form>
-        <div id="analyze-result" aria-live="polite" hidden>
-          <p id="analyze-summary"></p>
-          <p id="analyze-meta" class="note"></p>
-        </div>
-        <p id="analyze-error" class="error" role="alert" hidden></p>
-      </section>
-      <details class="card secondary">
-        <summary>Cortes temporales y purga de etiquetas</summary>
-        <p class="note">La última etiqueta de cada bloque madura antes de comenzar el siguiente.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th scope="col">Bloque</th><th scope="col">Primera señal</th><th scope="col">Última señal</th><th scope="col">Última etiqueta</th><th scope="col">Filas</th></tr></thead>
-            <tbody id="splits"></tbody>
-          </table>
-        </div>
-      </details>
-      <section class="card secondary" aria-labelledby="explanation-title">
-        <h2 id="explanation-title">Explicación del informe</h2>
-        <p id="explanation-source" class="note"></p>
-        <p id="explanation"></p>
-      </section>
-      <details class="card secondary">
-        <summary>Procedencia del informe</summary>
-        <dl class="provenance">
-          <dt>Identificador</dt><dd id="run"></dd>
-          <dt>Datos · SHA-256</dt><dd id="input-hash"></dd>
-          <dt>Modelo · SHA-256</dt><dd id="artifact-hash"></dd>
-          <dt>Versión sklearn</dt><dd id="sklearn"></dd>
-          <dt>Generado el</dt><dd id="generated"></dd>
-        </dl>
-        <a href="/api/v1/snapshot/schema">Ver contrato JSON Schema ↗</a>
-      </details>
-    </div>
   </main>
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <p>SwarmTrader · Proyecto III · Desarrollo de Soluciones de IA 2026-27</p>
+      <p class="foot-links">
+        <a href="/api/v1/snapshot/schema">Contrato JSON</a>
+        <a href="/api/v1/pipeline">Pipeline</a>
+        <a href="https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel">Código en GitHub ↗</a>
+      </p>
+      <p class="disclaimer">Investigación académica con datos de demostración: no es una recomendación de inversión.</p>
+    </div>
+  </footer>
 </body>
 </html>
