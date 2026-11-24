@@ -76,13 +76,39 @@ jobs:
           smoke="$RUNNER_TEMP/ii-smoke"
           python -m swarmtrade_app demo-data --output "$smoke/demo.csv" --sessions 680 --symbols 8 --seed 42
           echo "c0574a8505d4329a8db523513d2f9f7bdbbb1599dd7568e4866d3b5ae1abf4c2  $smoke/demo.csv" | sha256sum -c -
+          # > Receta completa del README del II: también la inspección (perfil, figuras y sospechas de leakage).
+          python -m swarmtrade_app inspect --data "$smoke/demo.csv" --output "$smoke/inspection"
+          test -s "$smoke/inspection/data_profile.json"
           python -m swarmtrade_app train --data "$smoke/demo.csv" --run "$smoke/run" --data-kind synthetic
           python -m swarmtrade_app evaluate --run "$smoke/run"
           python -m swarmtrade_app run --data "$smoke/demo.csv" --artifact "$smoke/run/model.joblib" --output "$smoke/run/report.json" --provider mock
           test -s "$smoke/run/test_metrics.json"
           python -c "import json, sys; r = json.load(open(sys.argv[1])); assert r['ai_status'] == 'completed', r['ai_status']" "$smoke/run/report.json"
-          # > Métricas publicadas en el README del II: el smoke falla si la receta deja de reproducirlas (tolerancia 1e-6).
-          python -c "import json, math, pathlib, sys; run = pathlib.Path(sys.argv[1]); v = json.loads((run / 'validation.json').read_text()); t = json.loads((run / 'test_metrics.json').read_text()); got = {'validation ridge.rmse': v['validation']['ridge']['rmse'], 'test rmse': t['rmse'], 'test baseline.rmse': t['baseline']['rmse']}; want = {'validation ridge.rmse': 0.064383, 'test rmse': 0.070995, 'test baseline.rmse': 0.066148}; bad = {k: (got[k], want[k]) for k in want if not math.isclose(got[k], want[k], rel_tol=0, abs_tol=1e-6)}; assert not bad, bad; print('Métricas reproducidas:', got)" "$smoke/run"
+          # > Las 15 métricas de la tabla de referencia del README del II y las cifras de su inferencia, con
+          #   tolerancia 1e-6: el smoke falla si la receta deja de reproducirlas o si las predicciones del
+          #   informe dejan de salir del modelo entrenado.
+          python - "$smoke/run" <<'PY'
+          import json, math, pathlib, sys
+          run = pathlib.Path(sys.argv[1])
+          v = json.loads((run / 'validation.json').read_text())['validation']
+          t = json.loads((run / 'test_metrics.json').read_text())
+          r = json.loads((run / 'report.json').read_text())
+          got = {f'validation {m}.{k}': v[m][k] for m in ('dummy', 'ridge', 'swarm') for k in ('rmse', 'mae', 'r2')}
+          got |= {f'test {k}': t[k] for k in ('rmse', 'mae', 'r2')}
+          got |= {f'test baseline.{k}': t['baseline'][k] for k in ('rmse', 'mae', 'r2')}
+          predictions = {row['symbol']: row['predicted_return'] for row in r['predictions']}
+          got |= {'mean_prediction': r['summary']['mean_prediction'], 'prediction_spread': r['summary']['prediction_spread'], 'DEMO06 predicted_return': predictions['DEMO06']}
+          want = {'validation dummy.rmse': 0.065762, 'validation dummy.mae': 0.054687, 'validation dummy.r2': -0.438352,
+                  'validation ridge.rmse': 0.064383, 'validation ridge.mae': 0.053232, 'validation ridge.r2': -0.378661,
+                  'validation swarm.rmse': 0.065318, 'validation swarm.mae': 0.054426, 'validation swarm.r2': -0.419027,
+                  'test rmse': 0.070995, 'test mae': 0.055318, 'test r2': -0.254941,
+                  'test baseline.rmse': 0.066148, 'test baseline.mae': 0.052328, 'test baseline.r2': -0.089425,
+                  'mean_prediction': 0.016455, 'prediction_spread': 0.056672, 'DEMO06 predicted_return': 0.045789}
+          bad = {k: (got[k], want[k]) for k in want if not math.isclose(got[k], want[k], rel_tol=0, abs_tol=1e-6)}
+          assert not bad, bad
+          assert r['summary']['top_symbol'] == 'DEMO06', r['summary']['top_symbol']
+          print(f'Métricas e inferencia reproducidas: {len(want)} valores dentro de 1e-6 y top_symbol DEMO06')
+          PY
       - name: Proyecto III · pipeline y contrato HTTP
         env:
           PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii

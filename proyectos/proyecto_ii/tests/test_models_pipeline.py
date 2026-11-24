@@ -80,6 +80,32 @@ def test_load_inference_mock_and_conviction(trained, tmp_path):
         run_pipeline(data, run / 'model.joblib', output, AIClient())
 
 
+def test_inference_predictions_come_from_the_persisted_estimator(trained):
+    # >> Las predicciones del informe son las del estimador guardado en model.joblib sobre los factores de
+    #    la última sesión, en el mismo orden de símbolos; la mejor señal es su máximo.
+    data, run, _, _ = trained
+    artifact = joblib.load(run / 'model.joblib')
+    panel = feature_panel(load_bars(data))
+    latest = panel.loc[panel['date'] == panel['date'].max()].sort_values('symbol')
+    expected = artifact['estimator'].predict(latest.loc[:, FEATURES])
+    report, _, _ = infer(data, run / 'model.joblib')
+    assert [row['symbol'] for row in report['predictions']] == list(latest['symbol'])
+    np.testing.assert_allclose([row['predicted_return'] for row in report['predictions']], expected,
+                               rtol=0, atol=1e-12)
+    assert report['summary']['top_symbol'] == latest['symbol'].iloc[int(np.argmax(expected))]
+    assert report['summary']['as_of'] == str(latest['date'].iloc[0].date())
+
+
+def test_inference_rejects_an_artifact_from_another_sklearn_version(trained, tmp_path):
+    data, run, _, _ = trained
+    artifact = joblib.load(run / 'model.joblib')
+    artifact['report']['sklearn_version'] = '0.0'
+    old = tmp_path / 'old.joblib'
+    joblib.dump(artifact, old)
+    with pytest.raises(DataError, match='Versión sklearn diferente'):
+        infer(data, old)
+
+
 def test_test_set_frozen_and_only_once(trained):
     _, run, p, report = trained
     altered = p.holdout.copy()
