@@ -396,3 +396,262 @@ def test_cli_demo_data(tmp_path, capsys):
 
 def test_cli_reports_data_failure(tmp_path):
     assert main(['demo-data', '--output', str(tmp_path / 'x.csv'), '--sessions', '4']) == 2
+
+
+# --- N: proveedor NVIDIA (build.nvidia.com, API compatible con OpenAI) ---------------------------
+
+NVIDIA_KEY = 'nvapi-clave-de-prueba-no-real'
+
+
+def chat_answer(content, **message):
+    """> Respuesta mínima con la forma de ChatCompletionOutput: choices[0].message.content."""
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content, **message))])
+
+
+def nvidia_sdk(monkeypatch, answers):
+    """> Doble de InferenceClient: cada llamada lanza o devuelve el siguiente elemento de `answers`."""
+    import huggingface_hub
+    calls = {'n': 0, 'config': [], 'request': []}
+    class Fake:
+        def __init__(self, **kwargs):
+            calls['config'].append(kwargs)
+        def chat_completion(self, **kwargs):
+            calls['request'].append(kwargs)
+            answer = answers[min(calls['n'], len(answers) - 1)]
+            calls['n'] += 1
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+    monkeypatch.setenv('NVIDIA_API_KEY', NVIDIA_KEY)
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', Fake)
+    return calls
+
+
+def nvidia_status_error(status: int):
+    """> Error real del SDK tal como lo produce InferenceClient contra integrate.api.nvidia.com (sin red)."""
+    import httpx
+    from huggingface_hub.errors import HfHubHTTPError
+    request = httpx.Request('POST', 'https://integrate.api.nvidia.com/v1/chat/completions')
+    return HfHubHTTPError(f'{status} Client Error', response=httpx.Response(status, request=request))
+
+
+def test_nvidia_success_uses_openai_compatible_endpoint(request_data, monkeypatch, caplog):
+    import inspect
+    import logging
+    import huggingface_hub
+    from swarmtrade_app.ai_client import DEFAULT_NVIDIA_MODEL, NVIDIA_BASE_URL
+    real = huggingface_hub.InferenceClient
+    caplog.set_level(logging.INFO)
+    calls = nvidia_sdk(monkeypatch, [chat_answer('Resumen de Kimi')])
+    result = AIClient('nvidia').analyze(request_data)
+    assert DEFAULT_NVIDIA_MODEL == 'moonshotai/kimi-k3.1-pro'
+    assert NVIDIA_BASE_URL == 'https://integrate.api.nvidia.com/v1'
+    assert (result.provider, result.task, result.model, result.text) == (
+        'nvidia', 'chat_completion', DEFAULT_NVIDIA_MODEL, 'Resumen de Kimi')
+    [config], [request] = calls['config'], calls['request']
+    # > base_url sustituye al proveedor de HF: la petición va directa a NVIDIA con su clave.
+    assert config == {'base_url': NVIDIA_BASE_URL, 'api_key': NVIDIA_KEY, 'timeout': 60}
+    assert (request['model'], request['max_tokens'], request['extra_body']) == (
+        DEFAULT_NVIDIA_MODEL, 1024, {'reasoning_effort': 'low'})
+    inspect.signature(real.__init__).bind(None, **config)
+    inspect.signature(real.chat_completion).bind(None, **request)
+    assert 'IA provider=nvidia model=moonshotai/kimi-k3.1-pro' in caplog.text
+    assert 'ai_status=completed' in caplog.text and 'attempt=1' in caplog.text
+    assert NVIDIA_KEY not in caplog.text
+
+
+def test_nvidia_sends_exactly_the_hf_payload_and_system_prompt(monkeypatch):
+    # >> N6: mismos agregados y mismo prompt de sistema que HF; ni precios ni datos crudos.
+    import huggingface_hub
+    request = AnalysisRequest('2026-09-28', 'ridge', 21, 8, 0.0012, 0.06, 'synthetic',
+                              prediction_std=0.01, prediction_spread=0.03, top_symbol='DEMO03')
+    nvidia = nvidia_sdk(monkeypatch, [chat_answer('ok')])
+    AIClient('nvidia').analyze(request)
+    hf = {}
+    class Recorder:
+        def __init__(self, **kwargs):
+            pass
+        def chat_completion(self, **kwargs):
+            hf['request'] = kwargs
+            return chat_answer('ok')
+    monkeypatch.setenv('HF_TOKEN', 'test-token-not-a-real-credential')
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', Recorder)
+    AIClient('hf').analyze(request)
+    assert nvidia['request'][0]['messages'] == hf['request']['messages']
+
+
+def test_nvidia_missing_key_fails_before_building_the_client(request_data, monkeypatch):
+    calls = nvidia_sdk(monkeypatch, [chat_answer('no debe llegar')])
+    monkeypatch.setenv('NVIDIA_API_KEY', '   ')
+    with pytest.raises(AIClientError, match='^Falta NVIDIA_API_KEY en el entorno$'):
+        AIClient('nvidia').analyze(request_data)
+    assert calls['config'] == [] and calls['n'] == 0
+
+
+@pytest.mark.parametrize('status,message', [(401, 'Clave de NVIDIA inválida o sin permisos'),
+                                            (403, 'Clave de NVIDIA inválida o sin permisos'),
+                                            (404, 'Modelo de NVIDIA no disponible')])
+def test_nvidia_auth_and_not_found_errors_are_not_retried(request_data, monkeypatch, caplog, status, message):
+    calls = nvidia_sdk(monkeypatch, [nvidia_status_error(status)])
+    waits = []
+    with pytest.raises(AIClientError, match=f'^{message}$'):
+        AIClient('nvidia', sleep=waits.append).analyze(request_data)
+    assert calls['n'] == 1 and waits == []
+    assert f'status={status}' in caplog.text and 'provider=nvidia' in caplog.text
+    assert 'ai_status=failed' in caplog.text and NVIDIA_KEY not in caplog.text
+
+
+def test_nvidia_rate_limit_is_retried_with_injected_wait(request_data, monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+    calls = nvidia_sdk(monkeypatch, [nvidia_status_error(429), chat_answer('tras el 429')])
+    waits = []
+    result = AIClient('nvidia', sleep=waits.append).analyze(request_data)
+    assert result.text == 'tras el 429' and calls['n'] == 2
+    assert len(waits) == 1 and 0.5 <= waits[0] <= 0.6
+    assert 'status=429' in caplog.text and 'attempt=2' in caplog.text
+
+
+@pytest.mark.parametrize('index', range(5))
+def test_nvidia_transient_errors_exhaust_retries(request_data, monkeypatch, index):
+    import httpx
+    from huggingface_hub.errors import InferenceTimeoutError
+    from swarmtrade_app.ai_client import MAX_RETRIES
+    request = httpx.Request('POST', 'https://integrate.api.nvidia.com/v1/chat/completions')
+    error = [nvidia_status_error(429), nvidia_status_error(502), InferenceTimeoutError('timeout'),
+             httpx.ConnectError('sin conexión', request=request), httpx.ReadTimeout('lento', request=request)][index]
+    calls = nvidia_sdk(monkeypatch, [error])
+    waits = []
+    with pytest.raises(AIClientError, match='Inferencia NVIDIA fallida') as err:
+        AIClient('nvidia', sleep=waits.append).analyze(request_data)
+    assert calls['n'] == MAX_RETRIES + 1 and len(waits) == MAX_RETRIES
+    assert NVIDIA_KEY not in str(err.value)
+
+
+def test_nvidia_other_errors_fail_without_retry(request_data, monkeypatch):
+    calls = nvidia_sdk(monkeypatch, [nvidia_status_error(400)])
+    waits = []
+    with pytest.raises(AIClientError, match='^Inferencia NVIDIA fallida; comprueba red, clave, cuota y modelo$'):
+        AIClient('nvidia', sleep=waits.append).analyze(request_data)
+    assert calls['n'] == 1 and waits == []
+
+
+@pytest.mark.parametrize('answer,message', [
+    (chat_answer(None, reasoning_content='Primero calculo la dispersión...'), 'solo razonamiento'),
+    (chat_answer('', reasoning='Pienso...'), 'solo razonamiento'),
+    (chat_answer('   '), 'una respuesta vacía'),
+    (chat_answer(None), 'una respuesta vacía'),
+    (SimpleNamespace(choices=[]), 'una respuesta vacía')])
+def test_nvidia_answer_without_final_content_fails_clearly_without_retry(request_data, monkeypatch, answer, message):
+    calls = nvidia_sdk(monkeypatch, [answer])
+    waits = []
+    with pytest.raises(AIClientError, match=f'NVIDIA devolvió {message}') as err:
+        AIClient('nvidia', sleep=waits.append).analyze(request_data)
+    assert calls['n'] == 1 and waits == []
+    assert 'calculo' not in str(err.value)  # > El razonamiento nunca se devuelve como texto.
+
+
+def test_nvidia_reasoning_only_with_the_real_sdk_output_type(request_data, monkeypatch):
+    # >> Mismo objeto que construye chat_completion: reasoning_content está fuera del esquema del SDK.
+    from huggingface_hub import ChatCompletionOutput
+    output = ChatCompletionOutput.parse_obj_as_instance({
+        'id': 'x', 'object': 'chat.completion', 'created': 0, 'model': 'moonshotai/kimi-k3.1-pro',
+        'system_fingerprint': '', 'usage': {'prompt_tokens': 1, 'completion_tokens': 1024, 'total_tokens': 1025},
+        'choices': [{'index': 0, 'finish_reason': 'length',
+                     'message': {'role': 'assistant', 'content': None, 'reasoning_content': 'Analizo...'}}]})
+    nvidia_sdk(monkeypatch, [output])
+    with pytest.raises(AIClientError, match='solo razonamiento.*NVIDIA_MAX_TOKENS'):
+        AIClient('nvidia', sleep=lambda seconds: None).analyze(request_data)
+
+
+def test_nvidia_key_is_redacted_from_text_and_logs(request_data, monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.DEBUG)
+    nvidia_sdk(monkeypatch, [chat_answer(f'eco de la clave {NVIDIA_KEY} en la respuesta')])
+    assert AIClient('nvidia').analyze(request_data).text == 'eco de la clave [REDACTED] en la respuesta'
+    nvidia_sdk(monkeypatch, [RuntimeError(f'401 para {NVIDIA_KEY}')])
+    with pytest.raises(AIClientError) as err:
+        AIClient('nvidia', sleep=lambda seconds: None).analyze(request_data)
+    assert NVIDIA_KEY not in str(err.value) and NVIDIA_KEY not in caplog.text
+    assert 'error_type=RuntimeError' in caplog.text
+
+
+def test_from_env_nvidia_defaults_and_custom_values():
+    from swarmtrade_app.ai_client import DEFAULT_NVIDIA_MODEL
+    default = AIClient.from_env({'AI_PROVIDER': ' NVIDIA '})
+    assert (default.provider, default.model, default.timeout, default.max_tokens) == (
+        'nvidia', DEFAULT_NVIDIA_MODEL, 60.0, 1024)
+    custom = AIClient.from_env({'AI_PROVIDER': 'nvidia', 'NVIDIA_MODEL': 'mistralai/mistral-large-4-1t-a52b',
+                                'NVIDIA_TIMEOUT': '90', 'NVIDIA_MAX_TOKENS': '4096', 'HF_MAX_TOKENS': '64'})
+    assert (custom.provider, custom.model, custom.timeout, custom.max_tokens) == (
+        'nvidia', 'mistralai/mistral-large-4-1t-a52b', 90.0, 4096)
+    # > HF no cambia: sus límites y su modelo siguen saliendo de HF_*.
+    hf = AIClient.from_env({'AI_PROVIDER': 'hf', 'NVIDIA_MODEL': 'nvidia/nemotron-3-ultra-550b-a55b'})
+    assert (hf.model, hf.timeout, hf.max_tokens) == ('Qwen/Qwen2.5-7B-Instruct', 30.0, 256)
+
+
+@pytest.mark.parametrize('name,value,message', [
+    ('NVIDIA_MODEL', 'kimi-sin-propietario', 'NVIDIA_MODEL debe tener el formato propietario/nombre'),
+    ('NVIDIA_MODEL', 'a/b/c', 'NVIDIA_MODEL debe tener el formato propietario/nombre'),
+    ('NVIDIA_TIMEOUT', '0', 'NVIDIA_TIMEOUT debe ser un número entre 1 y 120'),
+    ('NVIDIA_MAX_TOKENS', '5000', 'NVIDIA_MAX_TOKENS debe ser un número entre 1 y 4096'),
+    ('NVIDIA_MAX_TOKENS', '1.5', 'NVIDIA_MAX_TOKENS debe ser un número entre 1 y 4096')])
+def test_from_env_rejects_invalid_nvidia_values(name, value, message):
+    with pytest.raises(AIClientError, match=message):
+        AIClient.from_env({'AI_PROVIDER': 'nvidia', name: value})
+
+
+@pytest.mark.parametrize('kwargs,valid', [({'max_tokens': 4096}, True), ({'max_tokens': 4097}, False),
+                                          ({'timeout': 121}, False)])
+def test_nvidia_token_limit_is_wider_than_hf(kwargs, valid):
+    if valid:
+        assert AIClient('nvidia', **kwargs).max_tokens == 4096
+        with pytest.raises(AIClientError):
+            AIClient('hf', **kwargs)
+    else:
+        with pytest.raises(AIClientError, match='Límites de tiempo o tokens no válidos'):
+            AIClient('nvidia', **kwargs)
+
+
+def test_unknown_provider_message_lists_nvidia():
+    with pytest.raises(AIClientError, match='^Proveedor no soportado; usa mock, hf o nvidia$'):
+        AIClient('openai')
+
+
+def test_cli_analyze_summary_with_provider_nvidia(tmp_path, capsys, monkeypatch, request_data):
+    import dataclasses
+    import json
+    calls = nvidia_sdk(monkeypatch, [chat_answer('Explicación NVIDIA')])
+    summary = tmp_path / 'summary.json'
+    summary.write_text(json.dumps(dataclasses.asdict(request_data)))
+    assert main(['analyze-summary', '--summary', str(summary), '--provider', 'NVIDIA',
+                 '--model', 'nvidia/nemotron-3-ultra-550b-a55b']) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert (out['provider'], out['model'], out['text']) == (
+        'nvidia', 'nvidia/nemotron-3-ultra-550b-a55b', 'Explicación NVIDIA')
+    assert calls['request'][0]['model'] == 'nvidia/nemotron-3-ultra-550b-a55b'
+
+
+def test_cli_checks_nvidia_key_before_heavy_work(tmp_path, monkeypatch, caplog):
+    # >> Sin NVIDIA_API_KEY no se carga el CSV ni el artefacto, igual que con HF_TOKEN.
+    monkeypatch.setenv('AI_PROVIDER', 'nvidia')
+    output = tmp_path / 'nvidia.json'
+    assert main(['run', '--data', str(tmp_path / 'missing.csv'), '--artifact', str(tmp_path / 'missing.joblib'),
+                 '--output', str(output)]) == 2
+    assert 'Falta NVIDIA_API_KEY' in caplog.text and not output.exists()
+
+
+def test_cli_model_flag_validates_against_nvidia_variable(tmp_path, caplog):
+    summary = tmp_path / 'summary.json'
+    summary.write_text('{}')
+    assert main(['analyze-summary', '--summary', str(summary), '--provider', 'nvidia',
+                 '--model', 'kimi-sin-propietario']) == 2
+    assert 'NVIDIA_MODEL debe tener el formato propietario/nombre' in caplog.text
+
+
+def test_subprocess_environment_drops_nvidia_variables(monkeypatch, offline_env):
+    monkeypatch.setenv('AI_PROVIDER', 'nvidia')
+    monkeypatch.setenv('NVIDIA_API_KEY', 'nvapi-no-debe-viajar')
+    env = offline_env()
+    assert env['AI_PROVIDER'] == 'mock'
+    assert not [name for name in env if name.startswith('NVIDIA_')]

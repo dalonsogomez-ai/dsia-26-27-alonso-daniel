@@ -15,7 +15,7 @@
 
 ## 24/11/2026
 
-`>>` Tests del II: <cifras de tests>.
+`>>` Tests del II en local (`.venv-ii`, `pytest -q --cov=swarmtrade_app --cov-fail-under=80`): 128 passed y 85,40 % tras el borde de IA; 162 passed y 85,97 % tras añadir el proveedor `nvidia`, con `ai_client.py` al 100 %.
 
 `>>` La receta del README, ejecutada en una copia temporal de esta carpeta con `AI_PROVIDER=mock` y sin `HF_TOKEN`, reprodujo el sha256 `c0574a85…f4c2` de `data/demo.csv`, las métricas de validation (Ridge 0,064383, Dummy 0,065762, Swarm 0,065318), las del holdout (Ridge 0,070995, MAE 0,055318, R² −0,254941) y el baseline (0,066148), con `ai_status=completed`.
 

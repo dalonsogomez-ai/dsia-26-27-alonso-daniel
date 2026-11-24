@@ -14,7 +14,7 @@
 | GET | /api/v1/metrics | 200 con `uptime_s`, `requests_total`, contadores por ruta y estado, latencia media y p95 aproximada de las últimas 1024 peticiones y `run_id` cargado (`null` sin snapshot) |
 | GET | /api/v1/predictions/{symbol} | 200 con predicción, posición en el ranking y resumen de entrada del símbolo; 422 `invalid_symbol` si no cumple `^[A-Z0-9.]{1,32}$`; 404 `symbol_not_found`; 503 `snapshot_unavailable` |
 
-`>>` Cualquier otra ruta responde 404 y un método no admitido, 405. Variables de entorno: `DSIA_SNAPSHOT`, `DSIA_JOURNAL`, `DSIA_API_KEY`, `AI_PROVIDER`, `HF_TOKEN`, `HF_MODEL`, `HF_TIMEOUT`, `HF_MAX_TOKENS` y `HF_INFERENCE_PROVIDER` (ver [`.env.example`](.env.example)).
+`>>` Cualquier otra ruta responde 404 y un método no admitido, 405. Variables de entorno: `DSIA_SNAPSHOT`, `DSIA_JOURNAL`, `DSIA_API_KEY`, `AI_PROVIDER` (`mock`, `hf` o `nvidia`), `HF_TOKEN`, `HF_MODEL`, `HF_TIMEOUT`, `HF_MAX_TOKENS`, `HF_INFERENCE_PROVIDER`, `NVIDIA_API_KEY`, `NVIDIA_MODEL`, `NVIDIA_TIMEOUT` y `NVIDIA_MAX_TOKENS` (ver [`.env.example`](.env.example)).
 
 `>` Ejemplos contra la demo local (símbolos `DEMO01`…) o contra el despliegue público, que sirve los 10 símbolos reales de Alpaca:
 
@@ -31,7 +31,7 @@ curl -s https://dsia-swarmtrader.onrender.com/api/v1/predictions/AAPL
 
 ## Análisis bajo demanda
 
-`>` `POST /api/v1/analyze` recibe `application/json` con `{"symbol": "AAPL"}` (máximo 2048 bytes; campos extra rechazados). Construye un `AnalysisRequest` del Proyecto II con la predicción del símbolo en el snapshot cargado (`symbols=1`, `mean_prediction` = retorno estimado, RMSE de validación del modelo seleccionado) y llama a `AIClient`. El proveedor sale de `AI_PROVIDER` (`mock` por defecto) y el modelo, el timeout y el proveedor de inferencia de `HF_MODEL`, `HF_TIMEOUT` y `HF_INFERENCE_PROVIDER`, igual que la CLI del II. Al proveedor solo viajan agregados, nunca el nombre del símbolo ni el token.
+`>` `POST /api/v1/analyze` recibe `application/json` con `{"symbol": "AAPL"}` (máximo 2048 bytes; campos extra rechazados). Construye un `AnalysisRequest` del Proyecto II con la predicción del símbolo en el snapshot cargado (`symbols=1`, `mean_prediction` = retorno estimado, RMSE de validación del modelo seleccionado) y llama a `AIClient`. El proveedor sale de `AI_PROVIDER` (`mock` por defecto, `hf` o `nvidia`). Con `hf`, el modelo, el timeout y el proveedor de inferencia salen de `HF_MODEL`, `HF_TIMEOUT` y `HF_INFERENCE_PROVIDER`; con `nvidia`, de `NVIDIA_MODEL` (por defecto `moonshotai/kimi-k3.1-pro`), `NVIDIA_TIMEOUT` y `NVIDIA_MAX_TOKENS`, igual que la CLI del II. El campo `provider` de la respuesta vale `mock`, `huggingface` o `nvidia`. Al proveedor solo viajan agregados, nunca el nombre del símbolo, el token ni la clave.
 
 ```json
 {"symbol": "AAPL", "predicted_return": 0.0123, "run_id": "…", "as_of": "2026-09-28",
@@ -47,7 +47,7 @@ curl -s https://dsia-swarmtrader.onrender.com/api/v1/predictions/AAPL
 | 413 | `payload_too_large` | Cuerpo de más de 2048 bytes, declarado o recibido |
 | 415 | `unsupported_media_type` | `Content-Type` distinto de `application/json` |
 | 422 | `validation_error` | Falta `symbol`, no cumple `^[A-Z0-9.]{1,32}$` o hay campos extra; `detail.fields` lista ubicación y tipo sin repetir el valor |
-| 503 | `snapshot_unavailable` / `ai_unavailable` | Sin snapshot, o `AIClientError` (proveedor caído, sin `HF_TOKEN`, configuración inválida) |
+| 503 | `snapshot_unavailable` / `ai_unavailable` | Sin snapshot, o `AIClientError` (proveedor caído, sin `HF_TOKEN` o `NVIDIA_API_KEY`, configuración inválida); el mensaje no incluye nunca la clave |
 
 `~>` `AnalysisRequest` del II no tiene campo de pregunta libre, así que la API no acepta `question`. Ni el token ni el texto del proveedor se escriben en los logs: la línea INFO `analyze` registra `request_id`, símbolo, proveedor, modelo y `latency_ms`.
 

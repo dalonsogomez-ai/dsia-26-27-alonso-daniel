@@ -17,6 +17,36 @@ def test_client_from_env_reads_the_same_variables_as_the_cli_of_project_ii():
         "hf", "org/modelo", 12.5, 100, "together")
 
 
+def test_client_from_env_reads_nvidia_variables():
+    client = client_from_env("nvidia", env={"NVIDIA_MODEL": "nvidia/nemotron-3-ultra-550b-a55b",
+                                            "NVIDIA_TIMEOUT": "45", "NVIDIA_MAX_TOKENS": "2048"})
+    assert (client.provider, client.model, client.timeout, client.max_tokens) == (
+        "nvidia", "nvidia/nemotron-3-ultra-550b-a55b", 45.0, 2048)
+    with pytest.raises(AIClientError, match="NVIDIA_MODEL debe tener el formato propietario/nombre"):
+        client_from_env("nvidia", env={"NVIDIA_MODEL": "kimi"})
+
+
+def test_from_run_with_nvidia_publishes_explanation_with_provider_nvidia(demo_run, monkeypatch):
+    # >> El contrato del snapshot acepta la explicación de NVIDIA (Explanation.provider).
+    from swarmtrade_app.ai_client import AIResponse
+
+    # > Sin el NVIDIA_MODEL local, el modelo esperado es el de por defecto (igual que en test_analyze.py).
+    monkeypatch.delenv("NVIDIA_MODEL", raising=False)
+    monkeypatch.setattr(AIClient, "analyze", lambda self, request: AIResponse(
+        self.provider, "chat_completion", self.model, "Explicación NVIDIA"))
+    snapshot = from_run(demo_run.bars, demo_run.run, "nvidia")
+    assert (snapshot.explanation.provider, snapshot.explanation.model) == ("nvidia", "moonshotai/kimi-k3.1-pro")
+
+
+def test_build_cli_accepts_provider_nvidia(demo_run, tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    output = tmp_path / "snapshot.json"
+    assert main(["from-run", "--data", str(demo_run.bars), "--run", str(demo_run.run),
+                 "--output", str(output), "--provider", "nvidia"]) == 0
+    # nvidia sin clave -> AIClientError -> el informe se publica sin explicación
+    assert read_snapshot(output).explanation is None
+
+
 def test_client_from_env_defaults_to_mock_and_explicit_provider_wins():
     client = client_from_env(env={})
     assert (client.provider, client.model, client.timeout, client.max_tokens, client.inference_provider) == (

@@ -31,7 +31,7 @@
 | `GET /health` | `ready` o `unavailable` (503) con comprobaciones del snapshot y del journal, sin rutas |
 | `GET /api/v1/snapshot` y `/api/v1/snapshot/schema` | Informe completo validado y su JSON Schema |
 | `GET /api/v1/predictions/{symbol}` | Predicción, posición en el ranking y resumen de entrada de un símbolo (nulo con datos de Alpaca) |
-| `POST /api/v1/analyze` | Explicación bajo demanda con el `AIClient` del II (`mock` o Hugging Face); `X-API-Key` si se define `DSIA_API_KEY` |
+| `POST /api/v1/analyze` | Explicación bajo demanda con el `AIClient` del II (`mock`, Hugging Face o, como alternativa, NVIDIA con `AI_PROVIDER=nvidia`); `X-API-Key` si se define `DSIA_API_KEY` |
 | `GET /api/v1/pipeline` | Últimos eventos del journal del lote |
 | `GET /api/v1/metrics` | Peticiones por ruta y estado, latencia media y p95, `uptime_s` y `run_id` |
 

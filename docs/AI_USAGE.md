@@ -47,3 +47,12 @@
 | Qué se aceptó | README raíz con la leyenda al principio, CI fechado con el run 45288524693 y desarrollo por fechas; `README_DSIA.md` y `proyectos/README.md` con marcadores y despliegue con datos reales; arquitectura con la cadena completa y el arranque con `serve.py`; matriz de trazabilidad al día con `main` en `bd3b0fa`; anclas al README del II sin el guion inicial (por ejemplo `#motivación`); entrada de Codex (gpt-6.2-sol) para los ficheros comunes del 23/11 |
 | Qué se rechazó o no se adoptó | Fechas de octubre para el II o el III: no hay commits y no se fabrican. Tocar código, los README del I y del II o los diagramas: fuera del alcance de esta revisión |
 | Cómo se verificó | Pruebas del III en local con `.venv-ii`: 123 passed. Comprobador de enlaces relativos y anclas sobre los ficheros editados. Cifras contrastadas con el log del run 45288524693 (I 178 / 99,31 %, II 74 / 83,42 %, III 123 / 97,22 %, Docker correcto) |
+
+## 24/11/2026 · Claude Code (modelo Claude Opus 5.5): proveedor alternativo NVIDIA
+
+| Campo | Contenido |
+| --- | --- |
+| Qué se pidió | Añadir el mejor modelo de [build.nvidia.com](https://build.nvidia.com/models) como alternativa a Hugging Face, porque la cuenta HF del autor tenía 0 $ de saldo e Inference Providers rechazaba las llamadas |
+| Qué se aceptó | En los ficheros comunes, `render.yaml` con `NVIDIA_API_KEY` (`sync: false`) y `NVIDIA_MODEL` (`moonshotai/kimi-k3.1-pro`), manteniendo `AI_PROVIDER=mock`. El código y su documentación se registran en el AI_USAGE del [II](../proyectos/proyecto_ii/AI_USAGE.md) y del [III](../proyectos/proyecto_iii/AI_USAGE.md) |
+| Qué se rechazó o no se adoptó | Cambiar el proveedor del CI o de Render a `nvidia`: el CI sigue en `mock` y la clave la introduce el autor en el panel. Actualizar las cifras ligadas al run 45288524693, que describen ese run y no la verificación local |
+| Cómo se verificó | Local con `.venv-ii`, sin red: II 162 passed y 85,97 % de cobertura, `marimo check` sin avisos; III 134 passed y 97,20 %. `render.yaml` cargado con PyYAML |

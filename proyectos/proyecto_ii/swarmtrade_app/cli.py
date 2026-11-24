@@ -12,30 +12,32 @@ from dotenv import load_dotenv
 
 from ml_pipeline import guard
 
-from .ai_client import DEFAULT_HF_MODEL, AIClient, AIClientError, AnalysisRequest
+from .ai_client import (DEFAULT_HF_MODEL, DEFAULT_NVIDIA_MODEL, AIClient, AIClientError, AnalysisRequest,
+                        provider_name)
 from .data import DataError, generate_demo
 from .paper import PaperError
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG = logging.getLogger(__name__)
-
-
-def provider_name(value: str) -> str:
-    """> Normaliza el proveedor como la demo de clase: 'huggingface' es alias de 'hf'."""
-    name = value.lower().strip()
-    return 'hf' if name == 'huggingface' else name
+PROVIDERS = ['mock', 'hf', 'nvidia']
+PROVIDER_HELP = 'mock, hf (o su alias huggingface) o nvidia; por defecto AI_PROVIDER o mock'
+MODEL_HELP = (f'propietario/nombre; por defecto HF_MODEL o {DEFAULT_HF_MODEL} con hf, '
+              f'NVIDIA_MODEL o {DEFAULT_NVIDIA_MODEL} con nvidia')
+SECRET_ENV = {'hf': 'HF_TOKEN', 'nvidia': 'NVIDIA_API_KEY'}
 
 
 def client_from_args(args: argparse.Namespace) -> AIClient:
-    """> --provider y --model, si se indican, sustituyen a AI_PROVIDER y HF_MODEL; el resto sale de HF_*."""
-    overrides = {name: value for name, value in (('AI_PROVIDER', args.provider), ('HF_MODEL', args.model)) if value}
+    """> --provider y --model sustituyen a AI_PROVIDER y al modelo del proveedor (HF_MODEL o NVIDIA_MODEL)."""
+    provider = args.provider or provider_name(os.environ.get('AI_PROVIDER') or 'mock')
+    model_env = 'NVIDIA_MODEL' if provider == 'nvidia' else 'HF_MODEL'
+    overrides = {name: value for name, value in (('AI_PROVIDER', args.provider), (model_env, args.model)) if value}
     return AIClient.from_env({**os.environ, **overrides})
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(ROOT / '.env', override=False)
     parser = argparse.ArgumentParser(prog='python -m swarmtrade_app',
-                                     description='-> SwarmTrader × DSIA: datos, sklearn y API HF')
+                                     description='-> SwarmTrader × DSIA: datos, sklearn y API HF o NVIDIA')
     parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                         help='Nivel de los logs por etapa en stderr (antes del subcomando)')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -57,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     evaluate = commands.add_parser('evaluate', help='Evaluación única del holdout congelado')
     evaluate.add_argument('--run', type=Path, required=True)
     evaluate.add_argument('--ledger', type=Path)
-    run = commands.add_parser('run', help='Cargar modelo, inferir, asignar y explicar con HF/mock')
+    run = commands.add_parser('run', help='Cargar modelo, inferir, asignar y explicar con HF, NVIDIA o mock')
     run.add_argument('--data', type=Path, required=True)
     run.add_argument('--artifact', type=Path, required=True)
     run.add_argument('--output', type=Path, required=True)
@@ -65,9 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument('--risk-aversion', type=float, default=1)
     run.add_argument('--scenarios', type=int, default=3000)
     run.add_argument('--mean-source', choices=['model', 'empirical'], default='model')
-    run.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
-                     help='mock, hf o su alias huggingface; por defecto AI_PROVIDER o mock')
-    run.add_argument('--model', help=f'propietario/nombre; por defecto HF_MODEL o {DEFAULT_HF_MODEL}')
+    run.add_argument('--provider', type=provider_name, choices=PROVIDERS, help=PROVIDER_HELP)
+    run.add_argument('--model', help=MODEL_HELP)
     plan = commands.add_parser('paper-plan', help='Consultar cuenta paper y guardar plan; no envía órdenes')
     plan.add_argument('--report', type=Path, required=True)
     plan.add_argument('--output', type=Path, required=True)
@@ -78,9 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     execute.add_argument('--liquidate', action='store_true', help='Liquidar posiciones previas y esperar su cierre')
     analyze = commands.add_parser('analyze-summary', help='Explicar un resumen agregado tipado')
     analyze.add_argument('--summary', type=Path, required=True)
-    analyze.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
-                         help='mock, hf o su alias huggingface; por defecto AI_PROVIDER o mock')
-    analyze.add_argument('--model', help=f'propietario/nombre; por defecto HF_MODEL o {DEFAULT_HF_MODEL}')
+    analyze.add_argument('--provider', type=provider_name, choices=PROVIDERS, help=PROVIDER_HELP)
+    analyze.add_argument('--model', help=MODEL_HELP)
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
     logging.getLogger().setLevel(args.log_level)
@@ -119,10 +119,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from .pipeline import run_pipeline
             client = client_from_args(args)
-            if client.provider == 'hf' and not os.getenv('HF_TOKEN', '').strip():
+            secret = SECRET_ENV.get(client.provider)
+            if secret and not os.getenv(secret, '').strip():
                 # > Error de configuración: se detecta antes de inferir/optimizar. El informe `pending`
-                # queda para fallos del servicio HF una vez iniciada la llamada.
-                raise AIClientError('Falta HF_TOKEN en el entorno')
+                # queda para fallos del servicio HF o NVIDIA una vez iniciada la llamada.
+                raise AIClientError(f'Falta {secret} en el entorno')
             if args.command == 'run':
                 result = run_pipeline(args.data, args.artifact, args.output, client, decision=args.decision,
                                       risk_aversion=args.risk_aversion, scenarios=args.scenarios,

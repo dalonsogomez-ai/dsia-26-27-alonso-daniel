@@ -1,5 +1,6 @@
 import logging
 import re
+from types import SimpleNamespace
 
 import huggingface_hub
 import pytest
@@ -120,6 +121,61 @@ def test_hf_token_never_reaches_response_or_logs(demo_run, symbol, monkeypatch, 
     assert response.status_code == 503
     assert token not in response.text
     assert all(token not in record.getMessage() for record in caplog.records)
+
+
+NVIDIA_KEY = "nvapi-supersecreta-0123456789"
+
+
+def test_analyze_with_nvidia_provider_returns_provider_nvidia(demo_run, symbol, monkeypatch):
+    # >> AI_PROVIDER=nvidia llega por AIClient.from_env; el doble sustituye al SDK y no hay red.
+    seen = {}
+
+    class FakeNvidia:
+        def __init__(self, **kwargs):
+            seen["config"] = kwargs
+
+        def chat_completion(self, **kwargs):
+            seen["request"] = kwargs
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Resumen NVIDIA"))])
+
+    monkeypatch.setenv("AI_PROVIDER", "nvidia")
+    monkeypatch.setenv("NVIDIA_API_KEY", NVIDIA_KEY)
+    monkeypatch.delenv("NVIDIA_MODEL", raising=False)
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", FakeNvidia)
+    with TestClient(create_app(demo_run.path, api_key="")) as client:
+        response = client.post(URL, json={"symbol": symbol.symbol})
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["provider"], body["model"], body["summary"]) == (
+        "nvidia", "moonshotai/kimi-k3.1-pro", "Resumen NVIDIA")
+    assert seen["config"]["base_url"] == "https://integrate.api.nvidia.com/v1"
+    assert seen["request"]["extra_body"] == {"reasoning_effort": "low"}
+    assert NVIDIA_KEY not in response.text
+
+
+def test_nvidia_failure_is_503_without_leaking_the_key(demo_run, symbol, monkeypatch, caplog):
+    monkeypatch.setenv("AI_PROVIDER", "nvidia")
+    monkeypatch.setenv("NVIDIA_API_KEY", NVIDIA_KEY)
+
+    class LeakyNvidia:
+        def __init__(self, **kwargs):
+            raise RuntimeError(f"401 para la clave {kwargs['api_key']}")
+
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", LeakyNvidia)
+    with caplog.at_level(logging.DEBUG):
+        with TestClient(create_app(demo_run.path, api_key="")) as client:
+            response = client.post(URL, json={"symbol": symbol.symbol})
+    assert (response.status_code, response.json()["error"]) == (503, "ai_unavailable")
+    assert NVIDIA_KEY not in response.text
+    assert all(NVIDIA_KEY not in record.getMessage() for record in caplog.records)
+
+
+def test_nvidia_without_key_is_503(demo_run, symbol, monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "nvidia")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    with TestClient(create_app(demo_run.path, api_key="")) as client:
+        response = client.post(URL, json={"symbol": symbol.symbol})
+    assert (response.status_code, response.json()["error"]) == (503, "ai_unavailable")
 
 
 @pytest.mark.parametrize(("headers", "status"), [

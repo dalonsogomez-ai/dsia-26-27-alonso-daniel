@@ -39,7 +39,7 @@
 | Proyecto | Qué hace | Guía |
 | --- | --- | --- |
 | **I · Programación avanzada en Python** (10 %) | Dos pipelines con loader, validador, métricas y CLI: ventas del curso (checkpoint 140 válidas / 10 inválidas) y barras diarias de acciones (Alpaca o muestra sintética versionada). | [proyectos/proyecto_i/README.md](proyectos/proyecto_i/README.md) |
-| **II · Automatización e integración** (20 %) | Pipeline sklearn que estima el retorno a 21 sesiones: split temporal con purga, Dummy, Ridge y Swarm, holdout de un solo toque, artefacto `joblib` y cliente de IA tipado (`mock` o Hugging Face). | [proyectos/proyecto_ii/README.md](proyectos/proyecto_ii/README.md) |
+| **II · Automatización e integración** (20 %) | Pipeline sklearn que estima el retorno a 21 sesiones: split temporal con purga, Dummy, Ridge y Swarm, holdout de un solo toque, artefacto `joblib` y cliente de IA tipado (`mock`, Hugging Face o, como alternativa, NVIDIA). | [proyectos/proyecto_ii/README.md](proyectos/proyecto_ii/README.md) |
 | **III · Desarrollo end-to-end** (40 %) | Lote que congela un snapshot del modelo del II, API Starlette (`/health`, snapshot, predicciones, análisis, pipeline y métricas), dashboard con panel de operación, Playwright, Docker y despliegue en Render con datos reales de Alpaca. | [proyectos/proyecto_iii/README.md](proyectos/proyecto_iii/README.md) |
 
 `>>` [Índice de proyectos con diagramas](proyectos/README.md) · [Arquitectura en Excalidraw](docs/ARQUITECTURA_DSIA.md) · [Trazabilidad requisito → evidencia](docs/TRAZABILIDAD_DSIA.md) · [Guía de arranque](README_DSIA.md).

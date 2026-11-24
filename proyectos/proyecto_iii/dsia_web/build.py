@@ -94,7 +94,7 @@ def summarize_inputs(bars: pd.DataFrame, horizon: int = 21, window: int = 63) ->
 def from_run(data: Path, run: Path, provider: str = "mock", *, include_prices: bool = True) -> Snapshot:
     """Reutilizar un artefacto propio y el resultado del holdout que ya tiene guardado.
 
-    El cliente de IA toma modelo, timeout y proveedor de inferencia del entorno (``HF_*``).
+    El cliente de IA toma modelo, timeout y límites del entorno (``HF_*`` o ``NVIDIA_*``).
     Con ``include_prices=False`` el snapshot no lleva ``input_summary`` (cierres, retorno
     realizado ni volatilidad): es lo que se publica con datos de Alpaca, que no se redistribuyen.
     """
@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     existing_parser = modes.add_parser("from-run")
     existing_parser.add_argument("--data", type=Path, required=True)
     existing_parser.add_argument("--run", type=Path, required=True)
-    existing_parser.add_argument("--provider", choices=("mock", "hf"),
+    existing_parser.add_argument("--provider", choices=("mock", "hf", "nvidia"),
                                  default=os.getenv("AI_PROVIDER", "mock"))
     # -> alpaca: descarga real obligatoria. auto: Alpaca si hay credenciales; si no, la demo (CI y local).
     live_parsers = [modes.add_parser(name) for name in ("alpaca", "auto")]

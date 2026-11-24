@@ -27,6 +27,11 @@ services:
         sync: false
       - key: HF_TOKEN
         sync: false
+      # Alternativa a HF (cuenta HF sin saldo): se activa con AI_PROVIDER=nvidia y la clave en el panel.
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_MODEL
+        value: moonshotai/kimi-k3.1-pro
       # Datos reales: dsia_web.serve las lee al arrancar (no llegan al build de Docker).
       - key: ALPACA_PAPER_API_KEY_ID
         sync: false

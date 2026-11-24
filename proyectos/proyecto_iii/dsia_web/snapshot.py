@@ -57,7 +57,7 @@ class InputSummary(Contract):
 
 
 class Explanation(Contract):
-    provider: Literal["mock", "huggingface"]
+    provider: Literal["mock", "huggingface", "nvidia"]
     task: Literal["chat_completion"]
     model: str
     text: str

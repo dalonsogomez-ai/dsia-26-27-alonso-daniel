@@ -166,7 +166,7 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 ## Borde Hugging Face
 
-`->` Pieza distinta de sklearn, con el mismo estilo que el ejemplo de clase `ai_api_client.py`: dataclasses de entrada y salida, `AIClientError` y proveedores `mock` y `hf` en [`ai_client.py`](swarmtrade_app/ai_client.py).
+`->` Pieza distinta de sklearn, con el mismo estilo que el ejemplo de clase `ai_api_client.py`: dataclasses de entrada y salida, `AIClientError` y tres proveedores en [`ai_client.py`](swarmtrade_app/ai_client.py): `mock` (tests y CI), `hf` (el que pide el enunciado) y `nvidia` (alternativa descrita en [Alternativa NVIDIA](#alternativa-nvidia)).
 
 | Elemento | Valor |
 | --- | --- |
@@ -180,12 +180,18 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 | Variable | Valor por defecto | Validación |
 | --- | --- | --- |
-| `AI_PROVIDER` | `mock` | `mock` o `hf`; `huggingface` es alias de `hf`, sin distinguir mayúsculas |
+| `AI_PROVIDER` | `mock` | `mock`, `hf` o `nvidia`; `huggingface` es alias de `hf`, sin distinguir mayúsculas |
 | `HF_TOKEN` | vacío | Obligatorio con `hf`; la CLI lo comprueba antes de cargar datos |
 | `HF_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | Formato `owner/name` |
 | `HF_TIMEOUT` | 30 | Número entre 1 y 120 (`HF_TIMEOUT debe ser un número entre 1 y 120`) |
 | `HF_MAX_TOKENS` | 256 | Entero entre 1 y 512 |
 | `HF_INFERENCE_PROVIDER` | `auto` | `auto` o un identificador en minúsculas con guiones |
+| `NVIDIA_API_KEY` | vacío | Obligatoria con `nvidia`; la CLI la comprueba antes de cargar datos |
+| `NVIDIA_MODEL` | `moonshotai/kimi-k3.1-pro` | Formato `owner/name` (`NVIDIA_MODEL debe tener el formato propietario/nombre`) |
+| `NVIDIA_TIMEOUT` | 60 | Número entre 1 y 120 |
+| `NVIDIA_MAX_TOKENS` | 1024 | Entero entre 1 y 4096 |
+
+`>` Todas las variables se validan aunque su proveedor no esté activo, de modo que un valor erróneo aparece al arrancar y no al cambiar `AI_PROVIDER`. Con `nvidia`, `--model` sustituye a `NVIDIA_MODEL`; con `hf`, a `HF_MODEL`.
 
 `~>` **Validación del resumen.** `AnalysisRequest` comprueba tipos y rangos al construirse: `horizon` y `symbols` enteros positivos, medias y dispersiones finitas, `validation_rmse` finito y no negativo, `as_of` en formato ISO y `data_kind` en {`synthetic`, `alpaca`, `local`}. Un resumen inválido lanza `AIClientError("Resumen para la IA no válido: <motivo>")` antes de llamar a nadie. Los campos nuevos son opcionales, de modo que los informes anteriores siguen siendo legibles. `analyze-summary` traduce las claves sobrantes o ausentes del JSON a un error de dominio.
 
@@ -193,11 +199,12 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 | Situación | Respuesta del cliente | Reintento |
 | --- | --- | --- |
-| 401 / 403 | `Token de Hugging Face inválido o sin permisos` | No |
-| 404 | `Modelo o proveedor de inferencia no disponible` | No |
+| 401 / 403 | `Token de Hugging Face inválido o sin permisos` (con `nvidia`: `Clave de NVIDIA inválida o sin permisos`) | No |
+| 404 | `Modelo o proveedor de inferencia no disponible` (con `nvidia`: `Modelo de NVIDIA no disponible`) | No |
 | 429, 5xx, timeout o error de conexión | `AIClientError` genérico al agotar los intentos | Hasta 2 (`MAX_RETRIES`), con esperas de 0,5 s y 1 s más jitter |
+| `nvidia` responde sin `message.content` útil | `NVIDIA devolvió solo razonamiento, sin respuesta final; aumenta NVIDIA_MAX_TOKENS` o `NVIDIA devolvió una respuesta vacía` | No |
 
-`>>` El token nunca aparece en mensajes ni logs; la espera entre intentos es inyectable para que los tests no duerman. Si el servicio falla tras inferir, el informe conserva las predicciones con `ai_status=pending` y no se simula una respuesta real.
+`>>` El token y la clave nunca aparecen en mensajes ni logs, y si el modelo los repite en su texto se sustituyen por `[REDACTED]`; la espera entre intentos es inyectable para que los tests no duerman. Si el servicio falla tras inferir, el informe conserva las predicciones con `ai_status=pending` y no se simula una respuesta real.
 
 ```bash
 cp .env.example .env
@@ -206,6 +213,26 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 ```
 
 `=>` Según el Hub el 23/11/2026, `Qwen2.5-7B-Instruct` tenía un único Inference Provider activo, **featherless-ai**, que es el que resuelve `HF_INFERENCE_PROVIDER=auto`. Si deja de estar disponible, `HF_MODEL=Qwen/Qwen3-8B` ofrece la misma tarea, licencia Apache-2.0 y el mismo proveedor en esa fecha. **No se ha hecho ninguna llamada autenticada**: se cumple la alternativa del enunciado (`mock` + cliente tipado + `HF_TOKEN=` en [.env.example](.env.example)). Proveedor, costes y aportaciones de IA en [AI_USAGE.md](AI_USAGE.md).
+
+### Alternativa NVIDIA
+
+`->` El 24/11/2026 la cuenta de Hugging Face del autor tenía 0 $ de saldo e Inference Providers rechazaba las llamadas. Para poder explicar informes con un modelo real se añade `AI_PROVIDER=nvidia`, que usa el catálogo de [build.nvidia.com](https://build.nvidia.com/models). El proveedor `hf` se mantiene intacto porque es el que pide el enunciado.
+
+| Elemento | Valor |
+| --- | --- |
+| Modelo por defecto | `moonshotai/kimi-k3.1-pro` (`DEFAULT_NVIDIA_MODEL`): 2,8 billones de parámetros, endpoint gratuito, orientado a finanzas y con razonamiento |
+| Alternativas vía `NVIDIA_MODEL` | `mistralai/mistral-large-4-1t-a52b` y `nvidia/nemotron-3-ultra-550b-a55b`, del listado público `https://integrate.api.nvidia.com/v1/models` |
+| Endpoint | `POST https://integrate.api.nvidia.com/v1/chat/completions` (`NVIDIA_BASE_URL`), compatible con OpenAI, cabecera `Authorization: Bearer <NVIDIA_API_KEY>` |
+| Transporte | El mismo `huggingface_hub.InferenceClient` con `base_url`, sin dependencias nuevas: en la versión fijada (1.33.0) una URL añade `/chat/completions`, envía la clave como Bearer y fusiona `extra_body` en el JSON |
+| Parámetros | `reasoning_effort="low"`, `max_tokens` 1024 y timeout de 60 s. Los modelos de razonamiento gastan tokens antes de responder, por eso los valores por defecto superan a los de HF |
+| Qué recibe | Exactamente los mismos agregados y el mismo prompt de sistema que `hf`; nunca precios ni datos crudos |
+
+```bash
+# Completar NVIDIA_API_KEY en .env; no pegarla en comandos ni versionarla.
+python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.joblib --output runs/demo/nvidia.json --provider nvidia
+```
+
+`=>` Las pruebas del proveedor `nvidia` usan un `InferenceClient` falso y no salen a la red: éxito, falta de clave, 401/403/404 sin reintento, 429 con reintento y espera inyectada, respuesta solo de razonamiento o vacía, redacción de la clave, `from_env` y la CLI con `--provider nvidia`. Tampoco se ha hecho ninguna llamada autenticada a NVIDIA desde este repositorio.
 
 ## Del Proyecto II al Proyecto III
 
@@ -246,11 +273,11 @@ python -m pytest -q --cov=swarmtrade_app --cov-report=term-missing
 python -m pytest -q -m integration
 ```
 
-`>>` Los tests cubren el esquema y la validación de datos, la preparación y la purga, el entrenamiento y la **recarga del artefacto con inferencia**, el contrato del cliente de IA (incluida la firma real de `InferenceClient`, la clasificación de errores y los reintentos con espera simulada), la asignación y el adaptador paper con dobles. Los de integración recorren la CLI completa con archivos temporales. `tests/conftest.py` bloquea `socket.connect`, `socket.connect_ex`, `socket.create_connection` y `socket.getaddrinfo`, y aísla la suite de un `.env` local; el subproceso del test de integración recibe `AI_PROVIDER=mock` sin variables `HF_*`.
+`>>` Los tests cubren el esquema y la validación de datos, la preparación y la purga, el entrenamiento y la **recarga del artefacto con inferencia**, el contrato del cliente de IA (incluida la firma real de `InferenceClient`, la clasificación de errores y los reintentos con espera simulada), la asignación y el adaptador paper con dobles. Los de integración recorren la CLI completa con archivos temporales. `tests/conftest.py` bloquea `socket.connect`, `socket.connect_ex`, `socket.create_connection` y `socket.getaddrinfo`, y aísla la suite de un `.env` local; el subproceso del test de integración recibe `AI_PROVIDER=mock` sin variables `HF_*` ni `NVIDIA_*`.
 
 `>>` Workflow: [.github/workflows/ci.yml](../../.github/workflows/ci.yml). El job `proyectos-ii-y-iii` ejecuta en Ubuntu con Python 3.12 los tests del II con `--cov-fail-under=80`, `marimo check` de los cuatro notebooks y un smoke de la CLI: genera la demo, comprueba su sha256, entrena, evalúa, ejecuta `run` con `mock` y compara `validation.json` (`ridge.rmse` 0,064383) y `test_metrics.json` (`rmse` 0,070995, `baseline.rmse` 0,066148) con tolerancia 1e-6.
 
-`=>` Último run verde de `main`: [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693). Tests del II: <cifras de tests>. Detalle en [VERIFICACION.md](VERIFICACION.md).
+`=>` Último run verde de `main`: [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693). Tests del II en ese run: 74 passed y 83,42 % de cobertura; en local el 24/11/2026 (`.venv-ii`, con el proveedor `nvidia`): 162 passed y 85,97 %. Detalle en [VERIFICACION.md](VERIFICACION.md).
 
 ## Cobertura del enunciado
 

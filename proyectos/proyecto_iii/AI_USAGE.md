@@ -2,7 +2,7 @@
 
 `->` Registro según la política de uso de IA de la asignatura y la plantilla de la sesión de IA asistida: una entrada por tarea relevante con herramienta y modelo, objetivo, resumen de la petición, lo aceptado, lo rechazado, la verificación y los commits. El código entregado es del autor, que revisó cada cambio antes de integrarlo.
 
-`>>` El proveedor de IA **en ejecución** es otro asunto: la explicación de la demo y del despliegue la produce el cliente `mock` del Proyecto II (`mock-determinista-v1`), sin llamar a un modelo externo; el adaptador Hugging Face heredado está documentado en el [AI_USAGE del II](../proyecto_ii/AI_USAGE.md). Las métricas y las estimaciones proceden del pipeline sklearn y de sus artefactos, no del texto de un asistente. No se enviaron datos de Alpaca al proveedor de IA de la aplicación: a `AIClient` solo viajan agregados del informe.
+`>>` El proveedor de IA **en ejecución** es otro asunto: la explicación de la demo y del despliegue la produce el cliente `mock` del Proyecto II (`mock-determinista-v1`), sin llamar a un modelo externo; los adaptadores heredados (Hugging Face y, desde el 24/11/2026, NVIDIA con `AI_PROVIDER=nvidia`) están documentados en el [AI_USAGE del II](../proyecto_ii/AI_USAGE.md). Las métricas y las estimaciones proceden del pipeline sklearn y de sus artefactos, no del texto de un asistente. No se enviaron datos de Alpaca al proveedor de IA de la aplicación: a `AIClient` solo viajan agregados del informe.
 
 `>>` Antecedentes del núcleo que amplía el III, registrados en el AI_USAGE del II: el repositorio de investigación [`dalonsogomez-ai/swarmtrader`](https://github.com/dalonsogomez-ai/swarmtrader) se crea el 11/11/2026 (código reutilizado: v1.4.0, commit `5642dda`); el II se escribe el 12/11/2026 con OpenAI Codex (modelo gpt-6.1-sol) y la extracción de Alpaca se audita el 19/11/2026 con el mismo modelo.
 
@@ -64,5 +64,15 @@
 - **Rechazado:** fechas de octubre para el II o el III (no hay commits; no se fabrican); la entrada «antes de octubre de 2026» de una versión anterior de este registro, que no casa con la cronología verificable (el repositorio de investigación se crea el 11/11/2026).
 - **Verificación:** 123 pruebas del III en verde en local con `.venv-ii`; comprobador de enlaces relativos y anclas sobre los ficheros editados; cifras contrastadas con el log del run 45288524693.
 - **Commit:** los de la revisión de documentación del 24/11/2026, sin cambios de código.
+
+## 2026-11-24 — Proveedor NVIDIA en la API y el lote
+
+- **Herramienta:** Claude Code · **modelo:** Claude Opus 5.5
+- **Objetivo:** que `POST /api/v1/analyze` y el lote puedan explicar con un modelo de build.nvidia.com, porque la cuenta de Hugging Face del autor no tenía saldo.
+- **Prompts (resumen):** añadir el mejor modelo de la plataforma NVIDIA → proveedor `nvidia` en el cliente del II → el III sigue delegando en `AIClient.from_env` → tests de la API con un cliente falso → variables en `render.yaml`, `.env.example` y README.
+- **Aceptado:** `Explanation.provider` admite `nvidia`; `dsia_web.build from-run --provider nvidia`; `NVIDIA_API_KEY` (`sync: false`) y `NVIDIA_MODEL` en `render.yaml`, con `AI_PROVIDER` todavía en `mock`; pruebas de `/api/v1/analyze` con `AI_PROVIDER=nvidia` (200 con `provider: nvidia`; 503 sin filtrar la clave si el proveedor falla o falta la clave).
+- **Rechazado:** activar `nvidia` en Render desde el repositorio (lo decide el autor en el panel con su clave); cambiar el contrato HTTP de `/analyze`, que ya devolvía `provider` y `model`.
+- **Verificación:** pruebas del III → 134 passed, 97,20 % de cobertura de `dsia_web` (antes 128 y 97,20 %), sin red; las del II → 162 passed, 85,97 %.
+- **Commit:** pendiente; el cambio queda sin commit para que el autor lo revise.
 
 `>>` [Arquitectura](../../docs/ARQUITECTURA_DSIA.md) · [Uso de IA del Proyecto II](../proyecto_ii/AI_USAGE.md) · [Uso de IA en los ficheros comunes](../../docs/AI_USAGE.md) · [RC](RELEASE.md)
