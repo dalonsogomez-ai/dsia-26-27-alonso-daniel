@@ -62,7 +62,7 @@ def infer(data: Path, artifact_path: Path) -> tuple[dict, dict, pd.DataFrame]:
                               prediction_std=float(prediction.std()),
                               prediction_spread=float(prediction.max() - prediction.min()),
                               top_symbol=str(latest['symbol'].iloc[best]))
-    report = {'schema': 1, 'summary': asdict(summary), 'input_sha256': file_sha256(data),
+    report = {'schema': 1, 'summary': summary.to_dict(), 'input_sha256': file_sha256(data),
               'artifact_sha256': file_sha256(artifact_path),
               'predictions': [{'symbol': s, 'predicted_return': float(p)}
                               for s, p in zip(latest['symbol'], prediction)],

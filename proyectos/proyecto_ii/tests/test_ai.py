@@ -740,3 +740,80 @@ def test_configuration_failures_are_kind_config(request_data, monkeypatch):
             failure()
         kinds.append(err.value.kind)
     assert kinds == ['config'] * len(failures)
+
+
+# --- C4: símbolo enfocado en el resumen (focus_symbol, focus_prediction, focus_rank) ---------------
+
+FOCUS = {'focus_symbol': 'DEMO05', 'focus_prediction': 0.005, 'focus_rank': 3}
+
+
+def focused(**changes):
+    """> Resumen de 8 símbolos con DEMO05 en el puesto 3, como lo construye el III para un análisis."""
+    return AnalysisRequest('2026-09-28', 'ridge', 21, 8, 0.0012, 0.064383, 'synthetic', prediction_std=0.0123,
+                           prediction_spread=0.04, top_symbol='DEMO03', **(FOCUS | changes))
+
+
+def test_focus_fields_are_optional_and_accept_negative_predictions(request_data):
+    assert (request_data.focus_symbol, request_data.focus_prediction, request_data.focus_rank) == (None, None, None)
+    assert focused(focus_prediction=-0.02, focus_rank=8).focus_rank == 8
+    assert focused(focus_rank=1).focus_symbol == 'DEMO05'
+
+
+@pytest.mark.parametrize('changes,reason', [
+    ({'focus_symbol': ''}, 'focus_symbol debe ser un texto no vacío'),
+    ({'focus_symbol': '  '}, 'focus_symbol debe ser un texto no vacío'),
+    ({'focus_symbol': 5}, 'focus_symbol debe ser un texto no vacío'),
+    ({'focus_prediction': float('nan')}, 'focus_prediction debe ser un número finito'),
+    ({'focus_prediction': float('inf')}, 'focus_prediction debe ser un número finito'),
+    ({'focus_prediction': '0.01'}, 'focus_prediction debe ser un número finito'),
+    ({'focus_prediction': True}, 'focus_prediction debe ser un número finito'),
+    ({'focus_rank': 0}, 'focus_rank debe ser un entero entre 1 y symbols'),
+    ({'focus_rank': 9}, 'focus_rank debe ser un entero entre 1 y symbols'),
+    ({'focus_rank': True}, 'focus_rank debe ser un entero entre 1 y symbols'),
+    ({'focus_rank': 2.0}, 'focus_rank debe ser un entero entre 1 y symbols'),
+    ({'focus_rank': '3'}, 'focus_rank debe ser un entero entre 1 y symbols'),
+    ({'focus_rank': None}, 'focus_symbol, focus_prediction y focus_rank se indican juntos'),
+    ({'focus_symbol': None}, 'focus_symbol, focus_prediction y focus_rank se indican juntos'),
+    ({'focus_prediction': None, 'focus_rank': None}, 'focus_symbol, focus_prediction y focus_rank se indican juntos')])
+def test_focus_fields_are_validated(changes, reason):
+    with pytest.raises(AIClientError, match=f'^Resumen para la IA no válido: {reason}$') as err:
+        focused(**changes)
+    assert err.value.kind == 'config'
+
+
+def test_from_dict_accepts_the_focus_fields(request_data):
+    import dataclasses
+    data = dataclasses.asdict(request_data) | FOCUS
+    assert AnalysisRequest.from_dict(data) == dataclasses.replace(request_data, **FOCUS)
+    # > to_dict omite el foco ausente (informe del lote) y lo conserva si existe; ida y vuelta sin pérdida.
+    assert not set(FOCUS) & set(request_data.to_dict())
+    assert AnalysisRequest.from_dict(focused().to_dict()) == focused()
+    assert AnalysisRequest.from_dict(request_data.to_dict()) == request_data
+
+
+def test_mock_text_places_the_focused_symbol_in_the_ranking():
+    assert AIClient('mock').analyze(focused()).text == (
+        '[mock] Modelo ridge; horizonte 21 sesiones; 8 símbolos; media predicha 0.1200%; '
+        'dispersión entre símbolos 1.2300%; rango de predicciones 4.0000%; mejor señal DEMO03; '
+        'símbolo analizado DEMO05: predicción 0.5000%, puesto 3 de 8; '
+        'RMSE validación 0.064383. La predicción no demuestra rentabilidad ni incluye costes de ejecución.')
+
+
+def test_payload_and_system_prompt_mention_the_focus_only_when_present(monkeypatch):
+    import dataclasses
+    import json
+    calls = nvidia_sdk(monkeypatch, [chat_answer('ok')])
+    without_focus = dataclasses.replace(focused(), focus_symbol=None, focus_prediction=None, focus_rank=None)
+    AIClient('nvidia').analyze(focused())
+    AIClient('nvidia').analyze(without_focus)
+    (system, user), (plain_system, plain_user) = ([m['content'] for m in r['messages']] for r in calls['request'])
+    assert {name: json.loads(user)[name] for name in FOCUS} == FOCUS
+    assert not set(FOCUS) & set(json.loads(plain_user))
+    # > Con símbolo enfocado se pide situarlo respecto al resto; sin él, el prompt es el de siempre.
+    assert 'focus_symbol' in system and 'focus_rank' in system and 'respecto al resto' in system
+    assert 'focus_' not in plain_system and system.startswith(plain_system.removesuffix(PLAIN_TEXT_RULE))
+    for prompt in (system, plain_system):
+        assert prompt.endswith(PLAIN_TEXT_RULE) and '\n' not in prompt
+
+
+PLAIN_TEXT_RULE = 'Responde en texto plano, sin Markdown, en un máximo de 150 palabras.'

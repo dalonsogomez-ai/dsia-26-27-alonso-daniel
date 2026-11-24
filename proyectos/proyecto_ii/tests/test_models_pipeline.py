@@ -227,6 +227,8 @@ def test_summary_carries_dispersion_spread_and_top_signal(trained):
     best = max(report['predictions'], key=lambda r: r['predicted_return'])['symbol']
     assert summary['top_symbol'] == best
     assert summary['prediction_std'] > 0
+    # >> C4: el foco es por petición (lo rellena el III); el resumen del lote conserva sus claves de siempre.
+    assert not [name for name in summary if name.startswith('focus_')]
 
 
 def test_linear_models_keep_daily_mean_prediction_constant(trained):

@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import statistics
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +28,7 @@ from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest
 from .ai import client_from_env
 from .journal import read_recent_events
 from .observability import ObservabilityMiddleware, RequestMetrics, request_id
-from .snapshot import Snapshot, read_snapshot
+from .snapshot import Prediction, Snapshot, read_snapshot
 
 LOG = logging.getLogger("uvicorn.error").getChild("dsia")
 STATIC = Path(__file__).with_name("static")
@@ -85,6 +86,27 @@ def is_readable_file(path: Path | None) -> bool:
         return path is not None and path.is_file() and os.access(path, os.R_OK)
     except OSError:
         return False
+
+
+def ranked_predictions(snapshot: Snapshot) -> list[Prediction]:
+    """> Ranking por retorno predicho descendente; el puesto es la posición desde 1."""
+    return sorted(snapshot.predictions, key=lambda row: -row.predicted_return)
+
+
+def analysis_request(snapshot: Snapshot, symbol: str) -> AnalysisRequest | None:
+    """Resumen del informe entero para la IA, con el símbolo pedido y su puesto; ``None`` si no está."""
+    ranked = ranked_predictions(snapshot)
+    position = next((index for index, row in enumerate(ranked, 1) if row.symbol == symbol), None)
+    if position is None:
+        return None
+    # > Mismos agregados que el lote del II (media, desviación poblacional, rango y mejor señal).
+    values = [row.predicted_return for row in ranked]
+    return AnalysisRequest(as_of=str(snapshot.as_of), model=snapshot.model, horizon=snapshot.horizon_sessions,
+                           symbols=len(values), mean_prediction=statistics.fmean(values),
+                           validation_rmse=snapshot.validation[snapshot.model].rmse, data_kind=snapshot.data_kind,
+                           prediction_std=statistics.pstdev(values), prediction_spread=max(values) - min(values),
+                           top_symbol=ranked[0].symbol, focus_symbol=symbol,
+                           focus_prediction=ranked[position - 1].predicted_return, focus_rank=position)
 
 
 def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None = None,
@@ -145,7 +167,7 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         snapshot: Snapshot | None = request.app.state.snapshot
         if snapshot is None:
             return error_response(request, 503, "snapshot_unavailable", "No hay un informe válido cargado.")
-        ranked = sorted(snapshot.predictions, key=lambda row: -row.predicted_return)
+        ranked = ranked_predictions(snapshot)
         position = next((index for index, row in enumerate(ranked, 1) if row.symbol == symbol), None)
         if position is None:
             return error_response(request, 404, "symbol_not_found", "El símbolo no está en el informe cargado.")
@@ -186,14 +208,9 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         snapshot: Snapshot | None = request.app.state.snapshot
         if snapshot is None:
             return error_response(request, 503, "snapshot_unavailable", "No hay un informe válido cargado.")
-        row = next((item for item in snapshot.predictions if item.symbol == symbol), None)
-        if row is None:
+        summary = analysis_request(snapshot, symbol)
+        if summary is None:
             return error_response(request, 404, "symbol_not_found", "El símbolo no está en el informe cargado.")
-        summary = AnalysisRequest(as_of=str(snapshot.as_of), model=snapshot.model,
-                                  horizon=snapshot.horizon_sessions, symbols=1,
-                                  mean_prediction=row.predicted_return,
-                                  validation_rmse=snapshot.validation[snapshot.model].rmse,
-                                  data_kind=snapshot.data_kind)
         rid = request_id(request.scope)
         try:
             client = ai_client_factory()
@@ -206,7 +223,7 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         LOG.info("analyze request_id=%s symbol=%s provider=%s model=%s latency_ms=%.2f",
                  rid, symbol, answer.provider, answer.model, latency_ms)
         return JSONResponse({
-            "symbol": symbol, "predicted_return": row.predicted_return, "run_id": snapshot.run_id,
+            "symbol": symbol, "predicted_return": summary.focus_prediction, "run_id": snapshot.run_id,
             "as_of": str(snapshot.as_of), "summary": answer.text, "provider": answer.provider,
             "model": answer.model, "request_id": rid, "latency_ms": latency_ms,
         }, headers={"Cache-Control": "no-store"})

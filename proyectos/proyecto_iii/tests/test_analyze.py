@@ -1,11 +1,13 @@
+import dataclasses
 import logging
 import re
+import statistics
 from types import SimpleNamespace
 
 import huggingface_hub
 import pytest
 from starlette.testclient import TestClient
-from swarmtrade_app.ai_client import AIClient, AIClientError
+from swarmtrade_app.ai_client import AIClient, AIClientError, AIResponse
 
 from dsia_web.app import create_app
 
@@ -15,6 +17,12 @@ URL = "/api/v1/analyze"
 @pytest.fixture
 def symbol(demo_run):
     return sorted(demo_run.snapshot.predictions, key=lambda row: -row.predicted_return)[0]
+
+
+def report_aggregates(snapshot):
+    """> Agregados de todo el informe, calculados aquí de forma independiente a app.py."""
+    values = [row.predicted_return for row in snapshot.predictions]
+    return statistics.fmean(values), statistics.pstdev(values), max(values) - min(values)
 
 
 def test_analyze_returns_mock_explanation_with_trace(demo_run, symbol, monkeypatch):
@@ -27,15 +35,54 @@ def test_analyze_returns_mock_explanation_with_trace(demo_run, symbol, monkeypat
     latency = body.pop("latency_ms")
     assert isinstance(latency, float) and latency >= 0
     rmse = snapshot.validation[snapshot.model].rmse
+    mean, std, spread = report_aggregates(snapshot)
     assert body == {
         "symbol": symbol.symbol, "predicted_return": symbol.predicted_return, "run_id": snapshot.run_id,
         "as_of": str(snapshot.as_of), "provider": "mock", "model": "mock-determinista-v1",
         "request_id": "analisis-0001",
-        "summary": (f"[mock] Modelo {snapshot.model}; horizonte 21 sesiones; 1 símbolos; "
-                    f"media predicha {symbol.predicted_return:.4%}; RMSE validación {rmse:.6f}. "
+        # >> C4: el texto describe el informe entero (8 símbolos) y sitúa el símbolo pedido en el ranking.
+        "summary": (f"[mock] Modelo {snapshot.model}; horizonte 21 sesiones; 8 símbolos; "
+                    f"media predicha {mean:.4%}; dispersión entre símbolos {std:.4%}; "
+                    f"rango de predicciones {spread:.4%}; mejor señal {symbol.symbol}; "
+                    f"símbolo analizado {symbol.symbol}: predicción {symbol.predicted_return:.4%}, puesto 1 de 8; "
+                    f"RMSE validación {rmse:.6f}. "
                     "La predicción no demuestra rentabilidad ni incluye costes de ejecución."),
     }
     assert response.headers["x-request-id"] == "analisis-0001"
+
+
+class RecordingClient:
+    """> Doble de AIClient: guarda el AnalysisRequest que construye la API y responde sin red."""
+
+    def __init__(self):
+        self.requests = []
+
+    def analyze(self, request):
+        self.requests.append(request)
+        return AIResponse("mock", "chat_completion", "registro", "ok")
+
+
+def test_analyze_sends_report_aggregates_and_the_focused_symbol(demo_run):
+    snapshot = demo_run.snapshot
+    ranked = sorted(snapshot.predictions, key=lambda row: -row.predicted_return)
+    chosen = ranked[2]
+    recorder = RecordingClient()
+    with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=lambda: recorder)) as client:
+        assert client.post(URL, json={"symbol": chosen.symbol}).status_code == 200
+    mean, std, spread = report_aggregates(snapshot)
+    [sent] = recorder.requests
+    sent = dataclasses.asdict(sent)
+    numbers = {name: sent.pop(name) for name in ("mean_prediction", "prediction_std", "prediction_spread")}
+    assert numbers == pytest.approx({"mean_prediction": mean, "prediction_std": std, "prediction_spread": spread},
+                                    rel=1e-12, abs=1e-15)
+    assert sent == {
+        "as_of": str(snapshot.as_of), "model": snapshot.model, "horizon": 21, "symbols": 8,
+        "validation_rmse": snapshot.validation[snapshot.model].rmse, "data_kind": "synthetic",
+        "top_symbol": ranked[0].symbol, "focus_symbol": chosen.symbol,
+        "focus_prediction": chosen.predicted_return, "focus_rank": 3}
+    # > El puesto coincide con el de GET /api/v1/predictions/{symbol}.
+    with TestClient(create_app(demo_run.path)) as client:
+        assert client.get(f"/api/v1/predictions/{chosen.symbol}").json()["rank"] == sent["focus_rank"]
 
 
 @pytest.mark.parametrize(("kwargs", "status", "code"), [

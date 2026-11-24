@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import MISSING, dataclass, fields
+from dataclasses import MISSING, asdict, dataclass, fields
 from datetime import date
 import json
 import logging
@@ -109,6 +109,9 @@ class AnalysisRequest:
     modelo aporta el orden relativo entre símbolos. Por eso se añaden la dispersión
     (``prediction_std``), el rango (``prediction_spread`` = máximo − mínimo) y la mejor señal
     (``top_symbol``). Son opcionales para seguir leyendo informes anteriores.
+
+    ``focus_symbol``, ``focus_prediction`` y ``focus_rank`` (opcionales y siempre juntos) piden
+    explicar un símbolo concreto del informe: su retorno predicho y su puesto entre ``symbols``.
     """
     as_of: str
     model: str
@@ -120,6 +123,9 @@ class AnalysisRequest:
     prediction_std: float | None = None
     prediction_spread: float | None = None
     top_symbol: str | None = None
+    focus_symbol: str | None = None
+    focus_prediction: float | None = None
+    focus_rank: int | None = None
 
     def __post_init__(self):
         problem = self._problem()
@@ -149,7 +155,26 @@ class AnalysisRequest:
             return 'top_symbol debe ser un texto no vacío'
         if self.data_kind not in DATA_KINDS:
             return 'data_kind debe ser synthetic, alpaca o local'
+        return self._focus_problem()
+
+    def _focus_problem(self) -> str | None:
+        """> Símbolo enfocado: cada campo con su tipo y, si aparece alguno, los tres."""
+        focus = (self.focus_symbol, self.focus_prediction, self.focus_rank)
+        if self.focus_symbol is not None and (not isinstance(self.focus_symbol, str)
+                                              or not self.focus_symbol.strip()):
+            return 'focus_symbol debe ser un texto no vacío'
+        if self.focus_prediction is not None and not _is_finite(self.focus_prediction):
+            return 'focus_prediction debe ser un número finito'
+        if self.focus_rank is not None and (not _is_int(self.focus_rank) or not 1 <= self.focus_rank <= self.symbols):
+            return 'focus_rank debe ser un entero entre 1 y symbols'
+        if any(value is None for value in focus) and any(value is not None for value in focus):
+            return 'focus_symbol, focus_prediction y focus_rank se indican juntos'
         return None
+
+    def to_dict(self) -> dict:
+        """> Resumen serializable para el informe; sin las claves de foco cuando no hay símbolo enfocado."""
+        return {name: value for name, value in asdict(self).items()
+                if not (name.startswith('focus_') and value is None)}
 
     @classmethod
     def from_dict(cls, data) -> AnalysisRequest:
@@ -212,6 +237,22 @@ def _failure_kind(exc: BaseException, status: int | None) -> str:
     # > Conexión rechazada o cortada (ConnectionError, resto de httpx.TransportError), 5xx agotados,
     #   otros 4xx (400, 402...) o fallo desconocido del SDK: el proveedor no está disponible.
     return 'unavailable'
+
+
+_BASE_PROMPT = ('Explica en español este experimento académico. '
+                'Usa solo las cifras suministradas. Distingue error predictivo y rentabilidad. '
+                'La media diaria de las predicciones es casi constante porque los factores son z-scores por '
+                'fecha: interpreta la dispersión, el rango y la mejor señal como el orden relativo entre '
+                'símbolos. Indica si los datos son sintéticos. No sugieras órdenes ni pesos. ')
+_FOCUS_PROMPT = ('Céntrate en focus_symbol: explica su predicción (focus_prediction) y su puesto '
+                 '(focus_rank de n_symbols) respecto al resto de símbolos. ')
+# > La web muestra el texto tal cual: sin Markdown y breve para que se lea de un vistazo.
+_PLAIN_TEXT_RULE = 'Responde en texto plano, sin Markdown, en un máximo de 150 palabras.'
+
+
+def _system_prompt(request: AnalysisRequest) -> str:
+    """> Prompt de sistema; con símbolo enfocado pide situarlo respecto al resto del informe."""
+    return _BASE_PROMPT + (_FOCUS_PROMPT if request.focus_symbol is not None else '') + _PLAIN_TEXT_RULE
 
 
 class AIClient:
@@ -278,19 +319,15 @@ class AIClient:
         token = os.environ.get(spec.secret_env, '').strip()
         if not token:
             raise AIClientError(f'Falta {spec.secret_env} en el entorno', kind='config')
-        # > Solo se envían agregados: ni precios ni datos crudos; como mucho, el ticker de la mejor señal.
+        # > Solo se envían agregados y predicciones del modelo: ni precios ni datos crudos; como mucho,
+        # los tickers de la mejor señal y del símbolo enfocado.
         payload = {'date': request.as_of, 'model': request.model, 'horizon_sessions': request.horizon,
                    'n_symbols': request.symbols, 'mean_prediction': request.mean_prediction,
                    'validation_rmse': request.validation_rmse, 'data_kind': request.data_kind}
-        payload.update({name: getattr(request, name) for name in ('prediction_std', 'prediction_spread', 'top_symbol')
-                        if getattr(request, name) is not None})
-        messages = [{'role': 'system', 'content': 'Explica en español este experimento académico. '
-                     'Usa solo las cifras suministradas. Distingue error predictivo y rentabilidad. '
-                     'La media diaria de las predicciones es casi constante porque los factores son z-scores por '
-                     'fecha: interpreta la dispersión, el rango y la mejor señal como el orden relativo entre '
-                     'símbolos. Indica si los datos son sintéticos. No sugieras órdenes ni pesos. '
-                     # > La web muestra el texto tal cual: sin Markdown y breve para que se lea de un vistazo.
-                     'Responde en texto plano, sin Markdown, en un máximo de 150 palabras.'},
+        optional = ('prediction_std', 'prediction_spread', 'top_symbol', 'focus_symbol', 'focus_prediction',
+                    'focus_rank')
+        payload.update({name: getattr(request, name) for name in optional if getattr(request, name) is not None})
+        messages = [{'role': 'system', 'content': _system_prompt(request)},
                     {'role': 'user', 'content': json.dumps(payload, allow_nan=False)}]
         chat = self._chat_nvidia if self.provider == 'nvidia' else self._chat
         where = (f'provider={spec.name}' if self.provider == 'nvidia'
@@ -360,5 +397,8 @@ class AIClient:
             parts.append(f'rango de predicciones {request.prediction_spread:.4%}')
         if request.top_symbol is not None:
             parts.append(f'mejor señal {request.top_symbol}')
+        if request.focus_symbol is not None:  # > Los tres campos de foco van juntos (validado al construir).
+            parts.append(f'símbolo analizado {request.focus_symbol}: predicción {request.focus_prediction:.4%}, '
+                         f'puesto {request.focus_rank} de {request.symbols}')
         parts.append(f'RMSE validación {request.validation_rmse:.6f}')
         return '; '.join(parts) + '. La predicción no demuestra rentabilidad ni incluye costes de ejecución.'
