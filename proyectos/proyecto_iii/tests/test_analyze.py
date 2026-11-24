@@ -4,12 +4,14 @@ import re
 import statistics
 from types import SimpleNamespace
 
+import anyio
 import huggingface_hub
 import pytest
+from starlette.requests import Request
 from starlette.testclient import TestClient
 from swarmtrade_app.ai_client import AIClient, AIClientError, AIResponse
 
-from dsia_web.app import create_app
+from dsia_web.app import analysis_request, create_app, read_limited_body
 
 URL = "/api/v1/analyze"
 
@@ -118,6 +120,30 @@ def test_body_larger_than_declared_limit_is_rejected_while_streaming(demo_run):
     with TestClient(create_app(demo_run.path, api_key="")) as client:
         response = client.post(URL, content=chunks, headers={"Content-Type": "application/json"})
     assert (response.status_code, response.json()["error"]) == (413, "payload_too_large")
+
+
+@pytest.mark.parametrize("declared", [b"9" * 5000, b"abc"])
+def test_absurd_content_length_is_rejected_without_a_500(demo_run, declared):
+    # >> 5000 cifras pasan str.isdigit() pero superan el límite de int() (4300 cifras): 413, no 500.
+    with TestClient(create_app(demo_run.path, api_key="")) as client:
+        response = client.post(URL, content=b'{"symbol": "AAPL"}',
+                               headers={"Content-Type": "application/json", "Content-Length": declared})
+    assert (response.status_code, response.json()["error"]) == (413, "payload_too_large")
+
+
+@pytest.mark.parametrize("declared", [b"\xb2", b"\xb9", b"18"])
+def test_content_length_must_be_ascii_digits(declared):
+    # >> Starlette decodifica las cabeceras en latin-1: 0xB2 es «²», que pasa str.isdigit() y rompe int().
+    #    TestClient recodifica la cabecera en UTF-8, así que se prueba con un scope ASGI en bruto.
+    body = b'{"symbol": "AAPL"}'
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request({"type": "http", "method": "POST", "path": URL, "headers": [(b"content-length", declared)]},
+                      receive)
+    expected = body if declared == b"18" else None
+    assert anyio.run(read_limited_body, request) == expected
 
 
 def test_analyze_unknown_symbol_is_404_and_without_snapshot_is_503(demo_run, tmp_path):

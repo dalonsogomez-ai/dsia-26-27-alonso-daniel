@@ -67,7 +67,8 @@ def test_reader_is_bounded_in_bytes_and_drops_the_cut_line(tmp_path):
     assert skipped == 0
 
 
-@pytest.mark.parametrize("limit", ["0", "51", "-1", "diez", ""])
+# > «²» y «٣» (dígito árabe-índico) pasan str.isdigit(); 5000 cifras superan el límite de int(): 422, no 500.
+@pytest.mark.parametrize("limit", ["0", "51", "-1", "diez", "", "²", "٣", "9" * 5000])
 def test_pipeline_limit_must_be_between_1_and_50(demo_run, limit):
     with TestClient(create_app(demo_run.path, journal_path=demo_run.journal)) as client:
         response = client.get("/api/v1/pipeline", params={"limit": limit})

@@ -36,6 +36,7 @@ SYMBOL_PATTERN = r"^[A-Z0-9.]{1,32}$"
 SYMBOL = re.compile(SYMBOL_PATTERN)
 MAX_BODY_BYTES = 2048
 DEFAULT_EVENTS, MAX_EVENTS = 20, 50
+ASCII_INT = re.compile(r"[0-9]{1,18}")
 
 
 class AnalyzeBody(BaseModel):
@@ -68,10 +69,19 @@ async def router_error(request: Request, exc: HTTPException) -> JSONResponse:
     return response
 
 
+def ascii_int(raw: str) -> int | None:
+    """> Entero en cifras ASCII (hasta 18) o ``None``.
+
+    ``str.isdigit()`` acepta «²» (``int()`` falla) y «٣» (``int()`` lo convierte en 3), y miles de
+    cifras superan el límite de ``int()``: sin este filtro, una URL anónima provocaba un 500.
+    """
+    return int(raw) if ASCII_INT.fullmatch(raw) else None
+
+
 async def read_limited_body(request: Request, limit: int = MAX_BODY_BYTES) -> bytes | None:
     """Leer el cuerpo sin pasar de ``limit`` bytes; ``None`` si lo supera (declarado o real)."""
     declared = request.headers.get("content-length")
-    if declared is not None and (not declared.isdigit() or int(declared) > limit):
+    if declared is not None and ((size := ascii_int(declared)) is None or size > limit):
         return None
     received = bytearray()
     async for chunk in request.stream():
@@ -235,14 +245,14 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
                             headers={"Cache-Control": "no-store"})
 
     async def pipeline(request: Request) -> JSONResponse:
-        raw = request.query_params.get("limit", str(DEFAULT_EVENTS))
-        if not raw.isdigit() or not 1 <= int(raw) <= MAX_EVENTS:
+        limit = ascii_int(request.query_params.get("limit", str(DEFAULT_EVENTS)))
+        if limit is None or not 1 <= limit <= MAX_EVENTS:
             return error_response(request, 422, "invalid_limit", f"limit debe ser un entero entre 1 y {MAX_EVENTS}.")
         journal: Path | None = request.app.state.journal_path
         if journal is None:
             return error_response(request, 404, "journal_not_configured", "DSIA_JOURNAL no está configurado.")
         try:
-            events, skipped = await run_in_threadpool(read_recent_events, journal, int(raw))
+            events, skipped = await run_in_threadpool(read_recent_events, journal, limit)
         except OSError as exc:
             LOG.warning("journal_unavailable error_type=%s", type(exc).__name__)
             return error_response(request, 503, "journal_unavailable", "No se puede leer el journal del lote.")
