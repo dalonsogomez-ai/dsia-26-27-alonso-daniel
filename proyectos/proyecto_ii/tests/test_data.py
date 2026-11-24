@@ -76,6 +76,30 @@ def test_inspect_requires_symbol_and_close(tmp_path):
         inspect_dataset(path, tmp_path / 'out')
 
 
+def test_inspect_refuses_existing_non_empty_output(bars_file, tmp_path):
+    from swarmtrade_app.inspection import inspect_dataset
+    output = tmp_path / 'inspection'
+    output.mkdir()
+    (output / 'previo.json').write_text('{}')
+    with pytest.raises(DataError, match='La salida de inspect ya existe; usa un directorio nuevo'):
+        inspect_dataset(bars_file, output)
+    assert sorted(p.name for p in output.iterdir()) == ['previo.json']
+
+
+def test_inspect_accepts_existing_empty_directory_and_logs_profile(bars_file, tmp_path, caplog):
+    import logging
+    from swarmtrade_app.inspection import inspect_dataset
+    output = tmp_path / 'vacio'
+    output.mkdir()
+    caplog.set_level(logging.INFO, logger='swarmtrade_app.inspection')
+    inspect_dataset(bars_file, output)
+    profile = [r.getMessage() for r in caplog.records if r.name == 'swarmtrade_app.inspection']
+    assert len(profile) == 1
+    assert 'rows=3000 symbols=6' in profile[0]
+    assert 'start=2020-01-02' in profile[0] and 'end=' in profile[0]
+    assert 'leakage_suspects=' in profile[0]
+
+
 def test_cli_inspect_requires_explicit_output(bars_file):
     from swarmtrade_app.cli import main
     with pytest.raises(SystemExit):
