@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import statistics
+import time
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -31,6 +32,7 @@ from .ai import client_from_env
 from .journal import read_recent_events
 from .observability import (ObservabilityMiddleware, RequestMetrics, install_request_id_filter, mark_error_logged,
                             request_id, route_logs_to_uvicorn)
+from .ratelimit import AnalyzeRateLimiter, AnalyzeSlots
 from .snapshot import Prediction, Snapshot, read_snapshot
 
 LOG = logging.getLogger("uvicorn.error").getChild("dsia")
@@ -48,7 +50,19 @@ AI_FAILURES = {
                          "El proveedor de IA devolvió una respuesta no válida. Inténtalo más tarde."),
 }
 AI_UNAVAILABLE = (503, "ai_unavailable", "El proveedor de IA no está disponible. Inténtalo más tarde.")
+RATE_LIMIT_MESSAGES = {
+    "per_minute": ("Demasiados análisis seguidos desde tu conexión: máximo {limit} por minuto. "
+                   "Reintenta en {wait} s."),
+    "per_day": ("El servicio alcanzó su límite diario de {limit} análisis. "
+                "Reintenta en {wait} s (el contador se reinicia a las 00:00 UTC)."),
+    "per_ip_day": ("Tu conexión alcanzó su límite diario de {limit} análisis. "
+                   "Reintenta en {wait} s (el contador se reinicia a las 00:00 UTC)."),
+}
 KNOWN_PROVIDERS = frozenset({"mock", "hf", "nvidia"})
+BUSY_RETRY_AFTER = 10
+BUSY_MESSAGE = "Hay demasiados análisis en curso (máximo {limit} a la vez). Reintenta en {wait} s."
+BUSY_CLIENT_MESSAGE = ("Tu conexión ya tiene {limit} análisis en curso (máximo {limit} a la vez). "
+                       "Reintenta en {wait} s.")
 
 
 class AnalyzeBody(BaseModel):
@@ -172,12 +186,20 @@ def analysis_request(snapshot: Snapshot, symbol: str) -> AnalysisRequest | None:
 def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None = None,
                api_key: str | None = None, clock: Callable[[], datetime] = utc_now,
                ai_client_factory: Callable[[], AIClient] = client_from_env,
-               metrics_clock: Callable[[], float] = monotonic) -> Starlette:
+               metrics_clock: Callable[[], float] = monotonic,
+               rate_clock: Callable[[], float] = time.time) -> Starlette:
     @asynccontextmanager
     async def lifespan(app: Starlette):
         # > R11: en el arranque Uvicorn ya configuró su logging (también con uvicorn.run): las líneas del
         #   cliente del II salen por su handler si el root no tiene ninguno.
         route_logs_to_uvicorn()
+        try:
+            app.state.analyze_limiter = AnalyzeRateLimiter.from_env(clock=rate_clock)
+            app.state.analyze_slots = AnalyzeSlots.from_env()
+        except ValueError as error:
+            # ~> Configuración inválida del límite: el servicio no arranca (mejor que quedar sin límite).
+            LOG.error("config_invalid %s", error)
+            raise
         app.state.build = {"version": __version__, "commit": deployed_commit(os.environ)}
         # > Proveedor declarado (AI_PROVIDER normalizado como en el II); /health no llama al proveedor.
         #   Uno desconocido se publica como «invalid» y en el log solo su longitud: /health es público y
@@ -295,10 +317,45 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         if summary is None:
             return error_response(request, 404, "symbol_not_found", "El símbolo no está en el informe cargado.")
         rid = request_id(request.scope)
+        limiter: AnalyzeRateLimiter = request.app.state.analyze_limiter
+        client_key = limiter.client(request.headers, request.client)
+        slots: AnalyzeSlots = request.app.state.analyze_slots
+        busy = slots.try_enter(client_key)
+        if busy == "busy_per_ip":
+            # > Esa conexión ya tiene su cupo de análisis en curso => 429 al momento (lo arregla esperando).
+            LOG.warning("analyze_busy_client request_id=%s concurrency_per_ip=%d", rid, slots.per_client)
+            response = error_response(request, 429, "analyze_busy_client",
+                                      BUSY_CLIENT_MESSAGE.format(limit=slots.per_client, wait=BUSY_RETRY_AFTER))
+            response.headers["Retry-After"] = str(BUSY_RETRY_AFTER)
+            return response
+        if busy:
+            # >> R2: cupo de simultáneos lleno => 503 al momento, sin cola y sin gastar límite de uso.
+            LOG.warning("analyze_busy request_id=%s concurrency=%d", rid, slots.total)
+            response = error_response(request, 503, "analyze_busy",
+                                      BUSY_MESSAGE.format(limit=slots.total, wait=BUSY_RETRY_AFTER))
+            response.headers["Retry-After"] = str(BUSY_RETRY_AFTER)
+            return response
+        try:
+            return await run_analysis(request, summary, snapshot, symbol, rid, started, client_key)
+        finally:
+            slots.leave(client_key)
+
+    async def run_analysis(request: Request, summary: AnalysisRequest, snapshot: Snapshot, symbol: str,
+                           rid: str, started: float, client_key: str) -> JSONResponse:
+        # >> C1: solo se cuenta lo que llegaría al proveedor (las peticiones inválidas no gastan cupo).
+        limiter: AnalyzeRateLimiter = request.app.state.analyze_limiter
+        rejection = limiter.acquire(client_key)
+        if rejection is not None:
+            LOG.warning("analyze_rate_limited request_id=%s scope=%s retry_after_s=%d",
+                        rid, rejection.scope, rejection.retry_after)
+            response = error_response(request, 429, "rate_limited", RATE_LIMIT_MESSAGES[rejection.scope].format(
+                limit=limiter.limit(rejection.scope), wait=rejection.retry_after))
+            response.headers["Retry-After"] = str(rejection.retry_after)
+            return response
         client = None
         try:
             client = ai_client_factory()
-            answer = await run_in_threadpool(client.analyze, summary)
+            answer = await request.app.state.analyze_slots.run(client.analyze, summary)
         except AIClientError as exc:
             status, code, message = AI_FAILURES.get(exc.kind, AI_UNAVAILABLE)
             request.app.state.ai_last_call = f"failing:{exc.kind}"
@@ -320,9 +377,13 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
 
     async def service_metrics(request: Request) -> JSONResponse:
         snapshot: Snapshot | None = request.app.state.snapshot
+        usage = request.app.state.analyze_limiter.summary()
+        slots: AnalyzeSlots = request.app.state.analyze_slots
+        usage.update(concurrency=slots.total, concurrency_per_ip=slots.per_client, in_flight=slots.in_flight)
+        usage["rejected"].update(busy=slots.rejected, busy_per_ip=slots.rejected_per_client)
         return JSONResponse({**request.app.state.metrics.summary(),
-                             "run_id": snapshot.run_id if snapshot else None},
-                            headers={"Cache-Control": "no-store"})
+                             "run_id": snapshot.run_id if snapshot else None, **request.app.state.build,
+                             "rate_limit": usage}, headers={"Cache-Control": "no-store"})
 
     async def pipeline(request: Request) -> JSONResponse:
         limit = ascii_int(request.query_params.get("limit", str(DEFAULT_EVENTS)))

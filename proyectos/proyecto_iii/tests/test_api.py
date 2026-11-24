@@ -7,6 +7,7 @@ import logging
 
 from swarmtrade_app.ai_client import AIClient, AIClientError
 
+import dsia_web
 from dsia_web.app import create_app
 
 # >> R7: esta tanda es la RC2; el tag v0.9.0-rc2 lo crea el autor tras el CI en verde.
@@ -138,6 +139,43 @@ def test_ai_configuration_with_its_key_is_ok_and_the_key_never_leaks(demo_run, m
     assert key not in health.text and key not in caplog.text
 
 
+@pytest.mark.parametrize("env,commit", [
+    ({}, "local"),
+    ({"DSIA_COMMIT": " abc1234 "}, "abc1234"),
+    ({"RENDER_GIT_COMMIT": "  ", "DSIA_COMMIT": "abc1234"}, "abc1234"),
+    ({"RENDER_GIT_COMMIT": "e433fae5f1d2c3b4a5968778695a4b3c2d1e0f9a", "DSIA_COMMIT": "abc1234"}, "e433fae"),
+    ({"DSIA_COMMIT": "e433fae5f1d2c3b4a5968778695a4b3c2d1e0f9a"}, "e433fae5f1d2c3b4a5968778695a4b3c2d1e0f9a"),
+    # > Solo se publica un hash hexadecimal de 7 a 40 caracteres; lo demás sale como «invalid».
+    ({"DSIA_COMMIT": "v" * 60}, "invalid"),
+    ({"DSIA_COMMIT": "abc123"}, "invalid"),
+    ({"DSIA_COMMIT": "a" * 41}, "invalid"),
+    ({"DSIA_COMMIT": "release-0.9.0-rc2"}, "invalid"),
+    ({"RENDER_GIT_COMMIT": "main", "DSIA_COMMIT": "abc1234"}, "invalid"),
+])
+def test_health_and_metrics_expose_version_and_deployed_commit(demo_run, monkeypatch, env, commit):
+    # >> Versión del III y commit desplegado: RENDER_GIT_COMMIT[:7] en Render, DSIA_COMMIT fuera de él, o local.
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    with TestClient(create_app(demo_run.path)) as client:
+        health, metrics = client.get("/health").json(), client.get("/api/v1/metrics").json()
+    assert dsia_web.__version__ == VERSION
+    assert (health["version"], health["commit"]) == (metrics["version"], metrics["commit"]) == (VERSION, commit)
+
+
+@pytest.mark.parametrize("name", ["DSIA_COMMIT", "RENDER_GIT_COMMIT"])
+def test_a_key_pasted_into_the_commit_variable_is_neither_published_nor_logged(demo_run, monkeypatch, caplog, name):
+    # >> Misma política que AI_PROVIDER: /health y /api/v1/metrics son públicos; en el log, solo la longitud.
+    key = "nvapi-clave.falsa.commit.0123456789"  # > 35 caracteres: cabe en los 40 que antes se publicaban
+    monkeypatch.setenv(name, key)
+    with caplog.at_level(logging.DEBUG):
+        with TestClient(create_app(demo_run.path)) as client:
+            health, metrics = client.get("/health"), client.get("/api/v1/metrics")
+    assert health.json()["commit"] == metrics.json()["commit"] == "invalid"
+    for fragment in (key, key[:7], key[:20]):
+        assert fragment not in health.text and fragment not in metrics.text and fragment not in caplog.text
+    assert f"{name} no válido ({len(key)} caracteres)" in caplog.text
+
+
 def test_health_reads_journal_from_environment(demo_run, monkeypatch):
     monkeypatch.setenv("DSIA_JOURNAL", str(demo_run.journal))
     with TestClient(create_app(demo_run.path)) as client:
@@ -194,9 +232,14 @@ def test_metrics_report_counters_uptime_latency_and_loaded_run(demo_run):
     latency = body.pop("latency_ms")
     assert body == {
         "uptime_s": 42.5, "requests_total": 4, "run_id": demo_run.snapshot.run_id,
+        "version": VERSION, "commit": "local",
         "requests": [{"route": "/api/v1/predictions/{symbol}", "status": 404, "count": 1},
                      {"route": "/api/v1/predictions/{symbol}", "status": 422, "count": 1},
                      {"route": "/health", "status": 200, "count": 2}],
+        "rate_limit": {"per_minute": 5, "per_day": 200, "per_ip_day": 30, "trusted_proxy_hops": 1, "used_today": 0,
+                       "concurrency": 4, "concurrency_per_ip": 2, "in_flight": 0,
+                       "rejected": {"per_minute": 0, "per_day": 0, "per_ip_day": 0, "busy": 0, "busy_per_ip": 0},
+                       "xff_hops_seen": {}, "client_ip_source": {}},
     }
     assert latency["samples"] == 4
     assert 0 <= latency["mean"] and 0 <= latency["p95"]

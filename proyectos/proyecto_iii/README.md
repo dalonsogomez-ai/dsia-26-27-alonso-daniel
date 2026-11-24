@@ -181,7 +181,7 @@ curl -s -X POST -H 'Content-Type: application/json' -d '{"symbol": "DEMO01"}' ht
 
   ```bash
   docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .
-  docker run --rm -p 8790:8000 dsia-iii        # -e PORT=9000 cambia el puerto interno
+  docker run --rm -p 8790:8000 -e DSIA_TRUSTED_PROXY_HOPS=0 dsia-iii   # sin proxy delante; -e PORT=9000 cambia el puerto interno
   PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8790
   ```
 

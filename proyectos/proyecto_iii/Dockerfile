@@ -2,7 +2,8 @@
 # -> Imagen del Proyecto III: API Starlette + dashboard, con el snapshot generado en el build.
 # Contexto = raíz del repositorio:
 #   docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .
-#   docker run --rm -p 8000:8000 dsia-iii
+#   docker run --rm -p 8000:8000 -e DSIA_TRUSTED_PROXY_HOPS=0 dsia-iii
+# (sin proxy delante, X-Forwarded-For lo escribe el cliente; en Render manda CF-Connecting-IP)
 # Con datos reales de Alpaca (secret file en formato .env, nunca en la imagen):
 #   docker build --secret id=alpaca_env,src=alpaca.env -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .
 FROM python:3.12-slim

@@ -2,6 +2,7 @@ import dataclasses
 import logging
 import re
 import statistics
+import threading
 from types import SimpleNamespace
 
 import anyio
@@ -381,6 +382,135 @@ def test_analyze_request_is_logged_with_latency(demo_run, symbol, caplog):
     assert len(messages) == 1
     assert re.fullmatch(rf"analyze request_id=log-analisis symbol={re.escape(symbol.symbol)} provider=mock "
                         r"model=mock-determinista-v1 latency_ms=\d+\.\d{2}", messages[0])
+
+
+# --- R2: análisis simultáneos acotados -------------------------------------------------------------
+
+class SlowClient:
+    """> Doble de AIClient que se queda dentro de analyze hasta que la prueba lo suelta."""
+
+    def __init__(self):
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def analyze(self, request):
+        self.entered.set()
+        assert self.release.wait(10), "la prueba no soltó el análisis lento"
+        return AIResponse("mock", "chat_completion", "lento", "ok")
+
+
+async def leave_one_default_thread():
+    """> Un solo hilo en el pool por defecto de anyio (el de FileResponse y StaticFiles)."""
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 1
+
+
+def finishes_within(call, seconds):
+    box = {}
+    worker = threading.Thread(target=lambda: box.setdefault("value", call()), daemon=True)
+    worker.start()
+    worker.join(seconds)
+    return box.get("value")
+
+
+def test_busy_analyses_get_503_at_once_and_the_dashboard_keeps_answering(demo_run, symbol, monkeypatch, caplog):
+    monkeypatch.setenv("DSIA_ANALYZE_CONCURRENCY", "1")
+    slow = SlowClient()
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
+        with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=lambda: slow)) as client:
+            client.portal.call(leave_one_default_thread)
+            first = {}
+            worker = threading.Thread(target=lambda: first.setdefault(
+                "response", client.post(URL, json={"symbol": symbol.symbol})), daemon=True)
+            try:
+                worker.start()
+                assert slow.entered.wait(5)
+                busy = finishes_within(lambda: client.post(URL, json={"symbol": symbol.symbol},
+                                                           headers={"X-Request-ID": "ocupado-0001"}), 5)
+                # >> Con el único hilo por defecto libre, el análisis en curso no bloquea el dashboard.
+                page = finishes_within(lambda: client.get("/"), 5)
+                during = client.get("/api/v1/metrics").json()["rate_limit"]
+            finally:
+                slow.release.set()
+                worker.join(10)
+            after = client.get("/api/v1/metrics").json()["rate_limit"]
+    assert busy is not None and page is not None
+    assert page.status_code == 200
+    assert first["response"].status_code == 200
+    assert (busy.status_code, busy.headers["retry-after"]) == (503, "10")
+    assert busy.json() == {"error": "analyze_busy", "request_id": "ocupado-0001", "detail": {
+        "code": "analyze_busy",
+        "message": "Hay demasiados análisis en curso (máximo 1 a la vez). Reintenta en 10 s."}}
+    # > El 503 por cupo lleno no gasta límite de uso: solo cuenta el análisis admitido.
+    assert (during["concurrency"], during["in_flight"], during["rejected"]["busy"], during["used_today"]) == (
+        1, 1, 1, 1)
+    assert after["in_flight"] == 0
+    warnings = [record.getMessage() for record in caplog.records if record.getMessage().startswith("analyze_busy")]
+    assert warnings == ["analyze_busy request_id=ocupado-0001 concurrency=1"]
+    # > Como todo 5xx, el 503 deja una sola línea ERROR: la línea request de esa petición.
+    errors = [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR]
+    assert len(errors) == 1 and errors[0].startswith("request request_id=ocupado-0001 method=POST ")
+
+
+class CountingSlowClient:
+    """> Doble lento que cuenta cuántos análisis están dentro de la llamada al proveedor."""
+
+    def __init__(self):
+        self.inside = 0
+        self.changed = threading.Condition()
+        self.release = threading.Event()
+
+    def analyze(self, request):
+        with self.changed:
+            self.inside += 1
+            self.changed.notify_all()
+        assert self.release.wait(10), "la prueba no soltó el análisis lento"
+        return AIResponse("mock", "chat_completion", "lento", "ok")
+
+    def wait_inside(self, count, timeout=5):
+        with self.changed:
+            return self.changed.wait_for(lambda: self.inside >= count, timeout)
+
+
+def test_one_client_cannot_hold_every_analysis_slot(demo_run, symbol, monkeypatch, caplog):
+    # >> Con 5 por minuto y 4 huecos, una sola IP los ocupaba todos; ahora como mucho 2 a la vez.
+    slow = CountingSlowClient()
+    attacker = {"X-Forwarded-For": "198.51.100.66"}
+    results, workers = [], []
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
+        with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=lambda: slow)) as client:
+            def launch(headers):
+                worker = threading.Thread(target=lambda: results.append(
+                    client.post(URL, json={"symbol": symbol.symbol}, headers=headers)), daemon=True)
+                worker.start()
+                workers.append(worker)
+
+            try:
+                launch(attacker)
+                launch(attacker)
+                assert slow.wait_inside(2)
+                third = finishes_within(lambda: client.post(URL, json={"symbol": symbol.symbol}, headers={
+                    **attacker, "X-Request-ID": "otro-mas-0001"}), 5)
+                launch({"X-Forwarded-For": "192.0.2.50"})
+                # > Otra conexión sigue entrando: llega al proveedor mientras la primera tiene 2 en curso.
+                other_entered = slow.wait_inside(3)
+                during = client.get("/api/v1/metrics").json()["rate_limit"]
+            finally:
+                slow.release.set()
+                for worker in workers:
+                    worker.join(10)
+    assert other_entered
+    assert [response.status_code for response in results] == [200, 200, 200]
+    assert (third.status_code, third.headers["retry-after"]) == (429, "10")
+    assert third.json() == {"error": "analyze_busy_client", "request_id": "otro-mas-0001", "detail": {
+        "code": "analyze_busy_client",
+        "message": "Tu conexión ya tiene 2 análisis en curso (máximo 2 a la vez). Reintenta en 10 s."}}
+    # > El rechazo no gasta cupo de uso: solo cuentan los 3 admitidos.
+    assert (during["in_flight"], during["rejected"]["busy_per_ip"], during["rejected"]["busy"],
+            during["used_today"]) == (3, 1, 0, 3)
+    warnings = [record.getMessage() for record in caplog.records
+                if record.getMessage().startswith("analyze_busy_client")]
+    assert warnings == ["analyze_busy_client request_id=otro-mas-0001 concurrency_per_ip=2"]
+    assert "198.51.100.66" not in caplog.text
 
 
 # --- R6: error no controlado con la forma común ----------------------------------------------------

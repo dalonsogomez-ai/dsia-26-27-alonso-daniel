@@ -161,7 +161,8 @@ jobs:
         run: docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .
       - name: Proyecto III · arrancar el contenedor y esperar a healthy
         run: |
-          docker run -d --name dsia-iii -p 8790:8000 dsia-iii
+          # > Sin proxy delante: X-Forwarded-For lo escribe el cliente, así que no se usa para el límite de uso.
+          docker run -d --name dsia-iii -p 8790:8000 -e DSIA_TRUSTED_PROXY_HOPS=0 dsia-iii
           for attempt in $(seq 1 90); do
             status=$(docker inspect -f '{{.State.Health.Status}}' dsia-iii)
             if [ "$status" = healthy ]; then echo "healthy tras ${attempt}s"; exit 0; fi
@@ -172,6 +173,17 @@ jobs:
           exit 1
       - name: Proyecto III · smoke contra el contenedor
         run: PYTHON=python3 bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8790
+      - name: Proyecto III · el límite de uso no se esquiva rotando X-Forwarded-For
+        run: |
+          # > Tras el análisis del smoke, 6 más con un X-Forwarded-For distinto cada vez: con
+          #   DSIA_TRUSTED_PROXY_HOPS=0 cuenta el par TCP, así que el último debe ser 429 (5 por minuto).
+          codes=""
+          for i in 1 2 3 4 5 6; do
+            codes="$codes $(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+              -H "X-Forwarded-For: 203.0.113.$i" -d '{"symbol": "DEMO01"}' http://127.0.0.1:8790/api/v1/analyze)"
+          done
+          echo "Códigos:$codes"
+          test "${codes##* }" = 429
       - name: Logs y limpieza del contenedor
         if: ${{ always() }}
         run: |

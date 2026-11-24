@@ -48,6 +48,19 @@ def test_container_starts_through_the_refreshing_entrypoint():
     assert "--start-period=120s" in dockerfile
 
 
+DOCKER_RUN_RECIPES = ["proyectos/proyecto_iii/Dockerfile", ".github/workflows/ci.yml", "README.md",
+                      "proyectos/proyecto_iii/README.md", "README_DSIA.md"]
+
+
+def test_every_docker_run_recipe_without_a_proxy_ignores_x_forwarded_for():
+    # >> Sin proxy delante, el último salto de X-Forwarded-For lo escribe el cliente: con el valor por
+    #    defecto (1) bastaría inventarlo para saltarse el límite de uso. Toda receta `docker run -p` fija 0.
+    recipes = [(name, line.strip()) for name in DOCKER_RUN_RECIPES
+               for line in (ROOT / name).read_text().splitlines() if re.search(r"docker run .*-p \d", line)]
+    assert len(recipes) >= 4, recipes
+    assert [recipe for recipe in recipes if "-e DSIA_TRUSTED_PROXY_HOPS=0" not in recipe[1]] == []
+
+
 def test_alpaca_secret_file_is_ignored_by_git_and_kept_out_of_the_image():
     # >> README y Dockerfile piden crear alpaca.env para `docker build --secret`: nunca debe versionarse
     #    ni copiarse en la imagen, esté en la raíz o dentro de un proyecto (03_despliegue A2 y B1).
