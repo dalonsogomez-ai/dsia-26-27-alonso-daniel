@@ -48,6 +48,12 @@ def test_container_starts_through_the_refreshing_entrypoint():
     assert "--start-period=120s" in dockerfile
 
 
+def test_procfile_starts_uvicorn_without_the_access_log():
+    # >> El access log de Uvicorn escribe la IP del par TCP; la línea «request» del middleware ya basta.
+    [web] = [line for line in (ROOT / "Procfile").read_text().splitlines() if line.startswith("web:")]
+    assert web.rstrip().endswith("exec uvicorn dsia_web.app:app --host 0.0.0.0 --port $PORT --no-access-log")
+
+
 DOCKER_RUN_RECIPES = ["proyectos/proyecto_iii/Dockerfile", ".github/workflows/ci.yml", "README.md",
                       "proyectos/proyecto_iii/README.md", "README_DSIA.md"]
 
