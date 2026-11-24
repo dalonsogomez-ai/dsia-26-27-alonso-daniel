@@ -6,9 +6,12 @@ base=${1:-http://127.0.0.1:8765}
 base=${base%/}
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
-fetch() { curl --fail --silent --show-error --max-time 10 "$@"; }
+# > Render free duerme la instancia: el primer GET puede tardar ~1 min (arranque en frío + refresco de Alpaca).
+fetch() { curl --fail --silent --show-error --max-time "${SMOKE_TIMEOUT:-90}" "$@"; }
 
-fetch "$base/health" > "$tmp_dir/health.json"
+# >> Arranque en frío (~50 s) + refresco de Alpaca (hasta DSIA_REFRESH_TIMEOUT=180 s) pueden pasar de un GET:
+#    el primero se reintenta 6 veces cada 10 s, también con la conexión rechazada o un 5xx mientras arranca.
+fetch --retry 6 --retry-all-errors --retry-connrefused --retry-delay 10 "$base/health" > "$tmp_dir/health.json"
 fetch "$base/api/v1/snapshot" > "$tmp_dir/snapshot.json"
 # > El símbolo se toma del propio informe: vale para la demo sintética y para un histórico.
 symbol=$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["predictions"][0]["symbol"])' \
@@ -30,7 +33,8 @@ health, snapshot, prediction, analysis, metrics = (
     for name in ("health", "snapshot", "prediction", "analyze", "metrics"))
 run_id = snapshot.get("run_id")
 checks = [
-    (health.get("status") == "ready" and health.get("checks", {}).get("snapshot_loaded") is True,
+    # > «degraded» (200) = informe servido con la IA en fallo o mal configurada; el análisis de abajo decide.
+    (health.get("status") in {"ready", "degraded"} and health.get("checks", {}).get("snapshot_loaded") is True,
      "salud no lista"),
     (bool(run_id) and health.get("run_id") == run_id and health.get("as_of") == snapshot.get("as_of"),
      "salud e informe incoherentes"),
@@ -43,5 +47,6 @@ checks = [
 failed = [message for ok, message in checks if not ok]
 if failed:
     raise SystemExit("Smoke fallido: " + "; ".join(failed))
-print(f"Smoke correcto · run_id={run_id} · símbolo={symbol} · proveedor={analysis['provider']}")
+print(f"Smoke correcto · run_id={run_id} · símbolo={symbol} · proveedor={analysis['provider']} · "
+      f"salud={health['status']}")
 PY
