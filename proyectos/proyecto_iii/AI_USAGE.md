@@ -182,4 +182,14 @@
 - **Pendiente del autor:** hacerlo con su entorno y registrar aquí herramienta y modelo, explicación, plan, lo aceptado y lo rechazado, la verificación y el commit o PR, como pide el «Hecho cuando» de E6.
 - **Commit:** ninguno.
 
+## 2026-11-24 — Análisis real en Render: IP de cliente y Nemotron
+
+- **Herramienta:** Claude Code · **modelo:** Claude Opus 5.5
+- **Objetivo:** cerrar las dos comprobaciones de la RC2 que exigían gastar la clave de NVIDIA: qué cabecera da la IP de cliente en Render y si Nemotron usa el contexto del símbolo.
+- **Prompts (resumen):** leer `/health` y `/api/v1/metrics` → un solo `POST /api/v1/analyze` de `AAPL` con `X-Request-ID` propio → releer métricas y salud → registrar el resultado. En la misma sesión, una maqueta del grafo con React Flow 12.12.1 fuera del repositorio, sobre el journal real de Render, para comparar con la versión nativa.
+- **Aceptado:** `client_ip_source` `{"cf-connecting-ip": 1}` y `xff_hops_seen` `{"3": 1}`; resumen de 111 palabras con los agregados de los 10 símbolos y el puesto del pedido; `ai_last_call` de `never` a `ok`. La maqueta confirma que React Flow solo añade zoom y lienzo a cambio de unos 110 KB gzip y un build o ficheros copiados por la CSP `default-src 'self'`.
+- **Rechazado:** ejecutar `smoke_test.sh` o `browser_smoke.py` contra Render, que habrían lanzado más análisis de los necesarios; elegir por mi cuenta el workspace del MCP de Render para leer los logs.
+- **Verificación:** respuestas guardadas de los GET y del análisis (200 en 21,9 s, `latency_ms` 21 694, `request_id` devuelto); `used_today` de 0 a 1 y la ruta `/api/v1/analyze` con un 200 en `requests`. Sin comprobar: las líneas del cliente del II en el log de Render.
+- **Commit:** el que añade esta entrada.
+
 `>>` [Arquitectura](../../docs/ARQUITECTURA_DSIA.md) · [Uso de IA del Proyecto II](../proyecto_ii/AI_USAGE.md) · [Uso de IA en los ficheros comunes](../../docs/AI_USAGE.md) · [RC](RELEASE.md)
