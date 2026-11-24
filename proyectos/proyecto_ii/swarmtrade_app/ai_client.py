@@ -35,16 +35,36 @@ NVIDIA_GENERIC_FAILURE = 'Inferencia NVIDIA fallida; comprueba red, clave, cuota
 NVIDIA_FATAL_STATUS = {401: 'Clave de NVIDIA inválida o sin permisos',
                        403: 'Clave de NVIDIA inválida o sin permisos',
                        404: 'Modelo de NVIDIA no disponible'}
+# > Clase de los estados que no se reintentan; comparten mensaje por proveedor (FATAL_STATUS).
+FATAL_KINDS = {401: 'auth', 403: 'auth', 404: 'not_found'}
+# > Estados HTTP que significan «plazo vencido»: 408 (no se reintenta) y 504 (se reintenta como 5xx).
+TIMEOUT_STATUS = frozenset({408, 504})
+# -> Taxonomía de fallos de IA: quien consume el cliente decide el código HTTP sin leer el mensaje.
+AI_ERROR_KINDS = frozenset({'config', 'auth', 'not_found', 'timeout', 'unavailable', 'invalid_response',
+                            'rate_limited'})
 _MODEL_ID = re.compile(r'[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*')
 _INFERENCE_PROVIDER = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 
 
 class AIClientError(RuntimeError):
-    """Error externo redactado: nunca incorpora claves ni el cuerpo del servidor."""
+    """Error externo redactado: nunca incorpora claves ni el cuerpo del servidor.
+
+    ``kind`` clasifica el fallo (``AI_ERROR_KINDS``): ``config`` (entorno, proveedor, límites o
+    resumen inválidos; es el valor por defecto), ``auth`` (401/403), ``not_found`` (404),
+    ``timeout`` (timeout del cliente, 408 o 504 agotados), ``unavailable`` (conexión rechazada o
+    cortada, 5xx agotados, otros 4xx o fallo desconocido del SDK), ``invalid_response`` (respuesta
+    vacía o solo razonamiento) y ``rate_limited`` (429 agotado). El III lo traduce a 502, 503 o 504.
+    """
+
+    def __init__(self, message: str = '', *, kind: str = 'config') -> None:
+        if kind not in AI_ERROR_KINDS:
+            raise ValueError(f'kind de AIClientError desconocido: {kind}')
+        super().__init__(message)
+        self.kind = kind
 
 
 class _NoFinalAnswer(ValueError):
-    """> NVIDIA respondió sin message.content útil: no se reintenta porque repetir no lo arregla."""
+    """> El proveedor respondió sin texto final útil: no se reintenta porque repetir no lo arregla."""
 
 
 @dataclass(frozen=True)
@@ -104,7 +124,7 @@ class AnalysisRequest:
     def __post_init__(self):
         problem = self._problem()
         if problem:
-            raise AIClientError(f'Resumen para la IA no válido: {problem}')
+            raise AIClientError(f'Resumen para la IA no válido: {problem}', kind='config')
 
     def _problem(self) -> str | None:
         try:
@@ -135,14 +155,14 @@ class AnalysisRequest:
     def from_dict(cls, data) -> AnalysisRequest:
         """> Construye el resumen desde JSON con errores de dominio para claves sobrantes o ausentes."""
         if not isinstance(data, dict):
-            raise AIClientError('Resumen para la IA no válido: se espera un objeto JSON')
+            raise AIClientError('Resumen para la IA no válido: se espera un objeto JSON', kind='config')
         known = {f.name for f in fields(cls)}
         required = {f.name for f in fields(cls) if f.default is MISSING}
         extra, missing = sorted(set(data) - known), sorted(required - set(data))
         if extra:
-            raise AIClientError(f'Resumen para la IA no válido: claves sobrantes: {", ".join(extra)}')
+            raise AIClientError(f'Resumen para la IA no válido: claves sobrantes: {", ".join(extra)}', kind='config')
         if missing:
-            raise AIClientError(f'Resumen para la IA no válido: faltan claves: {", ".join(missing)}')
+            raise AIClientError(f'Resumen para la IA no válido: faltan claves: {", ".join(missing)}', kind='config')
         return cls(**data)
 
 
@@ -162,7 +182,7 @@ def _env_number(env: Mapping[str, str], name: str, default: str, cast: type, low
     except ValueError:
         value = None
     if value is None or not low <= value <= high:
-        raise AIClientError(f'{name} debe ser un número entre {low:g} y {high:g}')
+        raise AIClientError(f'{name} debe ser un número entre {low:g} y {high:g}', kind='config')
     return value
 
 
@@ -179,18 +199,33 @@ def _is_transient(exc: BaseException, status: int | None) -> bool:
     return isinstance(exc, (TimeoutError, ConnectionError, httpx.TransportError))
 
 
+def _failure_kind(exc: BaseException, status: int | None) -> str:
+    """> Clase del fallo definitivo cuando no es fatal (401/403/404) ni respuesta inválida."""
+    if status == 429:
+        return 'rate_limited'
+    if status in TIMEOUT_STATUS:
+        return 'timeout'  # > 408 o 504 del proveedor: su propio plazo venció (la cola de NVIDIA llega así).
+    if status is None:
+        import httpx
+        if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+            return 'timeout'  # > Venció el timeout del cliente: el proveedor no respondió a tiempo.
+    # > Conexión rechazada o cortada (ConnectionError, resto de httpx.TransportError), 5xx agotados,
+    #   otros 4xx (400, 402...) o fallo desconocido del SDK: el proveedor no está disponible.
+    return 'unavailable'
+
+
 class AIClient:
     def __init__(self, provider: str = 'mock', model: str | None = None,
                  timeout: float | None = None, max_tokens: int | None = None, inference_provider: str = 'auto',
                  sleep: Callable[[float], None] = time.sleep):
         provider = provider_name(provider)  # > 'huggingface' es alias de 'hf', como en la demo de clase.
         if provider not in {'mock', 'hf', 'nvidia'}:
-            raise AIClientError('Proveedor no soportado; usa mock, hf o nvidia')
+            raise AIClientError('Proveedor no soportado; usa mock, hf o nvidia', kind='config')
         spec = _PROVIDERS.get(provider, _PROVIDERS['hf'])
         timeout = spec.timeout if timeout is None else timeout
         max_tokens = spec.max_tokens if max_tokens is None else max_tokens
         if not 1 <= timeout <= MAX_TIMEOUT_SECONDS or not 1 <= max_tokens <= spec.max_tokens_limit:
-            raise AIClientError('Límites de tiempo o tokens no válidos')
+            raise AIClientError('Límites de tiempo o tokens no válidos', kind='config')
         self.provider = provider
         self.model = model or (DEFAULT_NVIDIA_MODEL if provider == 'nvidia' else DEFAULT_HF_MODEL)
         self.timeout = timeout
@@ -216,7 +251,7 @@ class AIClient:
         def model_id(name: str, default: str) -> str:
             model = read(name, default)
             if not _MODEL_ID.fullmatch(model):
-                raise AIClientError(f'{name} debe tener el formato propietario/nombre, p. ej. {default}')
+                raise AIClientError(f'{name} debe tener el formato propietario/nombre, p. ej. {default}', kind='config')
             return model
 
         model = model_id('HF_MODEL', DEFAULT_HF_MODEL)
@@ -224,7 +259,8 @@ class AIClient:
         max_tokens = _env_number(env, 'HF_MAX_TOKENS', '256', int, 1, _PROVIDERS['hf'].max_tokens_limit)
         inference_provider = read('HF_INFERENCE_PROVIDER', 'auto')
         if not _INFERENCE_PROVIDER.fullmatch(inference_provider):
-            raise AIClientError('HF_INFERENCE_PROVIDER debe ser auto o un identificador en minúsculas con guiones')
+            raise AIClientError('HF_INFERENCE_PROVIDER debe ser auto o un identificador en minúsculas con guiones',
+                                kind='config')
         nvidia = _PROVIDERS['nvidia']
         nvidia_model = model_id('NVIDIA_MODEL', DEFAULT_NVIDIA_MODEL)
         nvidia_timeout = _env_number(env, 'NVIDIA_TIMEOUT', f'{nvidia.timeout:g}', float, 1, MAX_TIMEOUT_SECONDS)
@@ -241,7 +277,7 @@ class AIClient:
         spec = _PROVIDERS[self.provider]
         token = os.environ.get(spec.secret_env, '').strip()
         if not token:
-            raise AIClientError(f'Falta {spec.secret_env} en el entorno')
+            raise AIClientError(f'Falta {spec.secret_env} en el entorno', kind='config')
         # > Solo se envían agregados: ni precios ni datos crudos; como mucho, el ticker de la mejor señal.
         payload = {'date': request.as_of, 'model': request.model, 'horizon_sessions': request.horizon,
                    'n_symbols': request.symbols, 'mean_prediction': request.mean_prediction,
@@ -272,11 +308,11 @@ class AIClient:
                             where, self.model, (perf_counter() - start) * 1000, type(exc).__name__,
                             status or '-', attempt)
                 if isinstance(exc, _NoFinalAnswer):
-                    raise AIClientError(str(exc)) from None
+                    raise AIClientError(str(exc), kind='invalid_response') from None
                 if status in spec.fatal_status:
-                    raise AIClientError(spec.fatal_status[status]) from None
+                    raise AIClientError(spec.fatal_status[status], kind=FATAL_KINDS[status]) from None
                 if attempt > MAX_RETRIES or not _is_transient(exc, status):
-                    raise AIClientError(spec.generic_failure) from None
+                    raise AIClientError(spec.generic_failure, kind=_failure_kind(exc, status)) from None
                 delay = BACKOFF_SECONDS * 2 ** (attempt - 1) + random.uniform(0, JITTER_SECONDS)
                 LOG.info('IA provider=%s reintento=%d espera_s=%.2f', spec.name, attempt, delay)
                 self._sleep(delay)
@@ -308,9 +344,10 @@ class AIClient:
         client = InferenceClient(api_key=token, provider=self.inference_provider, timeout=self.timeout)
         result = client.chat_completion(model=self.model, max_tokens=self.max_tokens, temperature=0.1,
                                         messages=messages)
-        text = result.choices[0].message.content
+        choices = getattr(result, 'choices', None) or []
+        text = getattr(getattr(choices[0], 'message', None), 'content', None) if choices else None
         if not isinstance(text, str) or not text.strip():
-            raise ValueError('Respuesta vacía')
+            raise _NoFinalAnswer('Inferencia HF fallida: el modelo devolvió una respuesta vacía')
         return text
 
     @staticmethod

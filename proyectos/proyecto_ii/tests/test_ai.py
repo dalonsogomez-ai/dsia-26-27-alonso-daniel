@@ -72,6 +72,7 @@ def test_provider_failure_is_redacted(request_data, monkeypatch):
     with pytest.raises(AIClientError) as err:
         AIClient('hf', sleep=lambda seconds: None).analyze(request_data)
     assert 'a-secret-in-response' not in str(err.value)
+    assert err.value.kind == 'unavailable'  # > Fallo desconocido del SDK: el proveedor no está disponible.
 
 
 @pytest.mark.parametrize('kwargs', [{'provider': 'unknown'}, {'timeout': 0}, {'max_tokens': 1000}])
@@ -209,15 +210,16 @@ def failing_sdk(monkeypatch, errors):
     return calls
 
 
-@pytest.mark.parametrize('status,message', [(401, 'Token de Hugging Face inválido o sin permisos'),
-                                            (403, 'Token de Hugging Face inválido o sin permisos'),
-                                            (404, 'Modelo o proveedor de inferencia no disponible')])
-def test_auth_and_not_found_errors_are_not_retried(request_data, monkeypatch, caplog, status, message):
+@pytest.mark.parametrize('status,message,kind', [(401, 'Token de Hugging Face inválido o sin permisos', 'auth'),
+                                                 (403, 'Token de Hugging Face inválido o sin permisos', 'auth'),
+                                                 (404, 'Modelo o proveedor de inferencia no disponible', 'not_found')])
+def test_auth_and_not_found_errors_are_not_retried(request_data, monkeypatch, caplog, status, message, kind):
     calls = failing_sdk(monkeypatch, [hf_status_error(status)] * 3)
     waits = []
-    with pytest.raises(AIClientError, match=message):
+    with pytest.raises(AIClientError, match=message) as err:
         AIClient('hf', sleep=waits.append).analyze(request_data)
     assert calls['n'] == 1 and waits == []
+    assert err.value.kind == kind
     assert f'status={status}' in caplog.text
     assert 'hf_token-secreto-de-prueba' not in caplog.text
 
@@ -227,10 +229,18 @@ def transient_errors():
     from huggingface_hub.errors import InferenceTimeoutError
     request = httpx.Request('POST', 'https://router.huggingface.co/v1/chat/completions')
     return [hf_status_error(429), hf_status_error(503), InferenceTimeoutError('timeout'),
-            httpx.ConnectError('sin conexión', request=request), httpx.ReadTimeout('lento', request=request)]
+            httpx.ConnectError('sin conexión', request=request), httpx.ReadTimeout('lento', request=request),
+            hf_status_error(504), ConnectionRefusedError('rechazada'),
+            httpx.RemoteProtocolError('cortada', request=request)]
 
 
-@pytest.mark.parametrize('index', range(5))
+# > Clase del fallo al agotar los intentos (tema 4, A1 y B4): 429 -> rate_limited, 5xx -> unavailable,
+#   timeout vencido (TimeoutError, httpx.TimeoutException o 504) -> timeout, y conexión caída -> unavailable.
+TRANSIENT_KINDS = ['rate_limited', 'unavailable', 'timeout', 'unavailable', 'timeout',
+                   'timeout', 'unavailable', 'unavailable']
+
+
+@pytest.mark.parametrize('index', range(len(TRANSIENT_KINDS)))
 def test_transient_errors_retry_twice_with_backoff_then_fail(request_data, monkeypatch, index):
     from swarmtrade_app.ai_client import MAX_RETRIES
     error = transient_errors()[index]
@@ -238,6 +248,7 @@ def test_transient_errors_retry_twice_with_backoff_then_fail(request_data, monke
     waits = []
     with pytest.raises(AIClientError, match='Inferencia HF fallida') as err:
         AIClient('hf', sleep=waits.append).analyze(request_data)
+    assert err.value.kind == TRANSIENT_KINDS[index]
     assert MAX_RETRIES == 2 and calls['n'] == 3
     assert len(waits) == 2
     assert 0.5 <= waits[0] <= 0.6 and 1.0 <= waits[1] <= 1.1
@@ -257,9 +268,20 @@ def test_transient_error_recovers_on_retry(request_data, monkeypatch, caplog):
 def test_other_client_errors_fail_without_retry(request_data, monkeypatch):
     calls = failing_sdk(monkeypatch, [hf_status_error(400), ValueError('respuesta rara')])
     waits = []
-    with pytest.raises(AIClientError, match='Inferencia HF fallida'):
+    with pytest.raises(AIClientError, match='Inferencia HF fallida') as err:
         AIClient('hf', sleep=waits.append).analyze(request_data)
     assert calls['n'] == 1 and waits == []
+    assert err.value.kind == 'unavailable'  # > 4xx sin clase propia: el proveedor rechaza la petición.
+
+
+def test_request_timeout_408_is_kind_timeout_without_retry(request_data, monkeypatch):
+    # >> 408 Request Timeout: el proveedor no recibió la petición a tiempo; como 4xx no se reintenta.
+    calls = failing_sdk(monkeypatch, [hf_status_error(408)] * 3)
+    waits = []
+    with pytest.raises(AIClientError, match='Inferencia HF fallida') as err:
+        AIClient('hf', sleep=waits.append).analyze(request_data)
+    assert calls['n'] == 1 and waits == []
+    assert err.value.kind == 'timeout'
 
 
 def test_empty_answer_fails_without_retry(request_data, monkeypatch):
@@ -274,9 +296,30 @@ def test_empty_answer_fails_without_retry(request_data, monkeypatch):
     monkeypatch.setenv('HF_TOKEN', 'test-token-not-a-real-credential')
     monkeypatch.setattr(huggingface_hub, 'InferenceClient', Empty)
     waits = []
-    with pytest.raises(AIClientError, match='Inferencia HF fallida'):
+    with pytest.raises(AIClientError, match='^Inferencia HF fallida: el modelo devolvió una respuesta vacía$') as err:
         AIClient('hf', sleep=waits.append).analyze(request_data)
     assert calls['n'] == 1 and waits == []
+    assert err.value.kind == 'invalid_response'
+
+
+def test_hf_answer_without_choices_is_invalid_response_without_retry(request_data, monkeypatch):
+    # >> choices=[] es una respuesta mala del proveedor (502 en el III), no un fallo de disponibilidad (503):
+    #    leer choices[0] sin comprobarlo daría IndexError, que acabaría como kind=unavailable.
+    import huggingface_hub
+    calls = {'n': 0}
+    class NoChoices:
+        def __init__(self, **kwargs):
+            pass
+        def chat_completion(self, **kwargs):
+            calls['n'] += 1
+            return SimpleNamespace(choices=[])
+    monkeypatch.setenv('HF_TOKEN', 'test-token-not-a-real-credential')
+    monkeypatch.setattr(huggingface_hub, 'InferenceClient', NoChoices)
+    waits = []
+    with pytest.raises(AIClientError, match='respuesta vacía') as err:
+        AIClient('hf', sleep=waits.append).analyze(request_data)
+    assert calls['n'] == 1 and waits == []
+    assert err.value.kind == 'invalid_response'
 
 
 # --- A8: CLI ------------------------------------------------------------------------------------
@@ -490,15 +533,16 @@ def test_nvidia_missing_key_fails_before_building_the_client(request_data, monke
     assert calls['config'] == [] and calls['n'] == 0
 
 
-@pytest.mark.parametrize('status,message', [(401, 'Clave de NVIDIA inválida o sin permisos'),
-                                            (403, 'Clave de NVIDIA inválida o sin permisos'),
-                                            (404, 'Modelo de NVIDIA no disponible')])
-def test_nvidia_auth_and_not_found_errors_are_not_retried(request_data, monkeypatch, caplog, status, message):
+@pytest.mark.parametrize('status,message,kind', [(401, 'Clave de NVIDIA inválida o sin permisos', 'auth'),
+                                                 (403, 'Clave de NVIDIA inválida o sin permisos', 'auth'),
+                                                 (404, 'Modelo de NVIDIA no disponible', 'not_found')])
+def test_nvidia_auth_and_not_found_errors_are_not_retried(request_data, monkeypatch, caplog, status, message, kind):
     calls = nvidia_sdk(monkeypatch, [nvidia_status_error(status)])
     waits = []
-    with pytest.raises(AIClientError, match=f'^{message}$'):
+    with pytest.raises(AIClientError, match=f'^{message}$') as err:
         AIClient('nvidia', sleep=waits.append).analyze(request_data)
     assert calls['n'] == 1 and waits == []
+    assert err.value.kind == kind
     assert f'status={status}' in caplog.text and 'provider=nvidia' in caplog.text
     assert 'ai_status=failed' in caplog.text and NVIDIA_KEY not in caplog.text
 
@@ -514,18 +558,22 @@ def test_nvidia_rate_limit_is_retried_with_injected_wait(request_data, monkeypat
     assert 'status=429' in caplog.text and 'attempt=2' in caplog.text
 
 
-@pytest.mark.parametrize('index', range(5))
+@pytest.mark.parametrize('index', range(len(TRANSIENT_KINDS)))
 def test_nvidia_transient_errors_exhaust_retries(request_data, monkeypatch, index):
     import httpx
     from huggingface_hub.errors import InferenceTimeoutError
     from swarmtrade_app.ai_client import MAX_RETRIES
     request = httpx.Request('POST', 'https://integrate.api.nvidia.com/v1/chat/completions')
+    # > Mismo orden que transient_errors(): la cola de NVIDIA agotada llega como 504 => timeout.
     error = [nvidia_status_error(429), nvidia_status_error(502), InferenceTimeoutError('timeout'),
-             httpx.ConnectError('sin conexión', request=request), httpx.ReadTimeout('lento', request=request)][index]
+             httpx.ConnectError('sin conexión', request=request), httpx.ReadTimeout('lento', request=request),
+             nvidia_status_error(504), ConnectionRefusedError('rechazada'),
+             httpx.RemoteProtocolError('cortada', request=request)][index]
     calls = nvidia_sdk(monkeypatch, [error])
     waits = []
     with pytest.raises(AIClientError, match='Inferencia NVIDIA fallida') as err:
         AIClient('nvidia', sleep=waits.append).analyze(request_data)
+    assert err.value.kind == TRANSIENT_KINDS[index]
     assert calls['n'] == MAX_RETRIES + 1 and len(waits) == MAX_RETRIES
     assert NVIDIA_KEY not in str(err.value)
 
@@ -533,9 +581,10 @@ def test_nvidia_transient_errors_exhaust_retries(request_data, monkeypatch, inde
 def test_nvidia_other_errors_fail_without_retry(request_data, monkeypatch):
     calls = nvidia_sdk(monkeypatch, [nvidia_status_error(400)])
     waits = []
-    with pytest.raises(AIClientError, match='^Inferencia NVIDIA fallida; comprueba red, clave, cuota y modelo$'):
+    with pytest.raises(AIClientError, match='^Inferencia NVIDIA fallida; comprueba red, clave, cuota y modelo$') as err:
         AIClient('nvidia', sleep=waits.append).analyze(request_data)
     assert calls['n'] == 1 and waits == []
+    assert err.value.kind == 'unavailable'
 
 
 @pytest.mark.parametrize('answer,message', [
@@ -550,6 +599,7 @@ def test_nvidia_answer_without_final_content_fails_clearly_without_retry(request
     with pytest.raises(AIClientError, match=f'NVIDIA devolvió {message}') as err:
         AIClient('nvidia', sleep=waits.append).analyze(request_data)
     assert calls['n'] == 1 and waits == []
+    assert err.value.kind == 'invalid_response'
     assert 'calculo' not in str(err.value)  # > El razonamiento nunca se devuelve como texto.
 
 
@@ -657,3 +707,36 @@ def test_subprocess_environment_drops_nvidia_variables(monkeypatch, offline_env)
     env = offline_env()
     assert env['AI_PROVIDER'] == 'mock'
     assert not [name for name in env if name.startswith('NVIDIA_')]
+
+
+# --- C2: taxonomía de errores de IA (AIClientError.kind) ------------------------------------------
+
+def test_ai_client_error_kind_defaults_to_config_and_is_validated():
+    from swarmtrade_app.ai_client import AI_ERROR_KINDS
+    assert AI_ERROR_KINDS == {'config', 'auth', 'not_found', 'timeout', 'unavailable', 'invalid_response',
+                              'rate_limited'}
+    assert AIClientError('Falta HF_TOKEN en el entorno').kind == 'config'
+    error = AIClientError('Proveedor lento', kind='timeout')
+    assert (str(error), error.kind) == ('Proveedor lento', 'timeout')
+    with pytest.raises(ValueError, match='kind'):
+        AIClientError('x', kind='desconocido')
+
+
+def test_configuration_failures_are_kind_config(request_data, monkeypatch):
+    # >> Lo que se arregla cambiando la configuración o el resumen: nunca se confunde con un fallo del proveedor.
+    import dataclasses
+    monkeypatch.delenv('HF_TOKEN', raising=False)
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    failures = [lambda: AIClient('openai'), lambda: AIClient(timeout=0),
+                lambda: AIClient.from_env({'HF_TIMEOUT': 'abc'}),
+                lambda: AIClient.from_env({'NVIDIA_MODEL': 'sin-propietario'}),
+                lambda: AIClient.from_env({'HF_INFERENCE_PROVIDER': 'Together'}),
+                lambda: AIClient('hf').analyze(request_data), lambda: AIClient('nvidia').analyze(request_data),
+                lambda: dataclasses.replace(request_data, horizon=0),
+                lambda: AnalysisRequest.from_dict({'question': '¿compro?'}), lambda: AnalysisRequest.from_dict([])]
+    kinds = []
+    for failure in failures:
+        with pytest.raises(AIClientError) as err:
+            failure()
+        kinds.append(err.value.kind)
+    assert kinds == ['config'] * len(failures)
