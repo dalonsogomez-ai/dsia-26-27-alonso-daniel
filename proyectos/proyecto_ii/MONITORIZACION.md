@@ -1,15 +1,29 @@
-# -> Continuidad de evaluación y monitorización hacia el III
+# Evaluación continua y monitorización hacia el III
 
-> Registrar en cada ejecución: hash de datos/modelo, universo, fecha máxima, horizonte, versión sklearn, fuente de medias, semilla, escenarios, brecha del solver y tipo de respuesta IA. No registrar tokens, cabeceras ni cuerpos de error del proveedor.
+`->` Plan del Proyecto II para vigilar datos, modelo e IA cuando el núcleo se ejecute de forma recurrente. El Proyecto III implementa una parte; lo que sigue pendiente se indica al final. La leyenda de los marcadores está en el [README](README.md#leyenda-utilizada-en-la-wiki).
 
-~> Calidad: rechazar claves duplicadas, valores no finitos, OHLC incoherente y paneles con huecos. Comparar por símbolo la distribución de los 14 factores con train y la de predicciones con validation. No reajustar scalers durante inferencia. Una deriva no equivale automáticamente a pérdida de rentabilidad: requiere diagnóstico.
+## Qué registrar en cada ejecución
 
-> Tras madurar las etiquetas a 21 sesiones, evaluar bloques temporales no solapados. Umbral operativo propuesto para revisar/reentrenar: RMSE de dos bloques consecutivos >1,25 × RMSE validation y soporte mínimo de seis fechas no solapadas. Es una regla propuesta, no calibrada ni desplegada. Comparar siempre Dummy y medir MAE por símbolo; no reutilizar el holdout de esta entrega para elegir nuevas variantes.
+`>` Hash de datos y de modelo, universo, fecha máxima, horizonte, versión de sklearn, fuente de medias, semilla, escenarios, brecha del solver y tipo de respuesta de IA. Del resumen para la IA, también la media, la dispersión (`prediction_std`), el spread (`prediction_spread`) y la mejor señal (`top_symbol`). No se registran tokens, cabeceras ni cuerpos de error del proveedor.
 
-> Reentrenar significa nueva versión de datos y repetir inspección → contrato → split purgado → train/validation → nuevo periodo futuro de test. Mantener registro de todos los intentos, no cambiar semilla por resultados favorables. El usuario ya autorizó completar esta implementación; futuras decisiones que cambien target, universo o criterio requieren documentar el nuevo contrato.
+## Calidad de datos y deriva
 
-> Broker paper: reconciliar accepted/new/partially_filled/filled/rejected/canceled contra el journal y client_order_id; comprobar saldo y posiciones después de fills. Ante timeout de envío, consultar el broker antes de repetir. El seguimiento persistente, recuperación de procesos interrumpidos y gestión de órdenes corporativas quedan para el III; actualmente se guardan estados parciales pero no hay un servicio desplegado.
+`~>` Rechazar claves duplicadas, valores no finitos, OHLC incoherente y paneles con huecos. Comparar por símbolo la distribución de los 14 factores con la de train y la de predicciones con la de validation. No reajustar scalers durante la inferencia.
 
-> HF: vigilar latencia, errores de autorización/disponibilidad y presupuesto, sin permitir que una explicación altere predicciones o el plan. Mock es la vía reproducible de CI. Probar conectividad real aparte y describirla como tal.
+`~>` Como la media diaria de las predicciones es constante por construcción, no sirve como señal de deriva. Las señales útiles son la dispersión y el spread de las predicciones de cada fecha: si colapsan hacia cero, el modelo deja de distinguir símbolos; si se disparan, conviene revisar los factores de entrada. Una deriva no implica por sí sola pérdida de rentabilidad: requiere diagnóstico.
 
-=> No hay jobs programados, monitorización activa, endpoint público ni operaciones live. Se proporciona el plan de ampliación requerido, no una afirmación de despliegue.
+## Error del modelo y reentrenamiento
+
+`>` Cuando maduren las etiquetas a 21 sesiones, evaluar bloques temporales sin solapamiento. Umbral propuesto para revisar o reentrenar: RMSE de dos bloques consecutivos superior a 1,25 × el RMSE de validation, con al menos seis fechas no solapadas. Es una regla propuesta, no calibrada. Comparar siempre con Dummy, medir el MAE por símbolo y no reutilizar el holdout de esta entrega para elegir variantes nuevas.
+
+`>` Reentrenar significa una nueva versión de datos y repetir inspección → contrato → split purgado → train/validation → un periodo futuro nuevo de test. Se conserva el registro de todos los intentos y no se cambia la semilla por resultados favorables. Cambiar target, universo o criterio exige documentar un contrato nuevo.
+
+## IA y broker paper
+
+`>` HF: vigilar latencia, `error_type`, errores de autorización (401/403) o de disponibilidad (404) y el número de reintentos por 429, 5xx o timeout. Una explicación nunca altera predicciones ni pesos. `mock` es la vía reproducible del CI; la conectividad real se prueba aparte y se describe como tal.
+
+`>` Broker paper (fuera del enunciado): reconciliar `accepted`, `new`, `partially_filled`, `filled`, `rejected` y `canceled` contra el journal y los `client_order_id`, y comprobar saldo y posiciones tras las ejecuciones. Ante un timeout de envío, consultar el broker antes de repetir.
+
+## Estado
+
+`=>` El Proyecto III cubre la parte operativa: [despliegue en Render](https://dsia-swarmtrader.onrender.com) que reentrena con datos reales de Alpaca en cada arranque, `/health`, `/api/v1/metrics` con latencia y contadores, y `/api/v1/pipeline` con el journal de etapas del lote ([README del III](../proyecto_iii/README.md#operación-y-verificación)). Siguen pendientes las alertas automáticas de deriva, la evaluación de bloques madurados y el seguimiento persistente de órdenes paper.
