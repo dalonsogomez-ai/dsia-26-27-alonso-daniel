@@ -128,18 +128,35 @@ async function getJSON(url) {
   return {ok: response.ok, status: response.status, body};
 }
 
+function aiStatus(checks) {
+  // R9: proveedor declarado, configuración validada al arrancar y resultado de la última llamada real.
+  if (!checks.ai_provider) return "";
+  const lastCall = checks.ai_last_call === "never" ? "sin llamadas"
+    : checks.ai_last_call === "ok" ? "correcta"
+      : `fallida (${String(checks.ai_last_call).replace("failing:", "")})`;
+  return `IA ${checks.ai_provider} · configuración ${checks.ai_config === "ok" ? "válida" : "no válida"}`
+    + ` · última llamada ${lastCall}`;
+}
+
 async function renderOperation() {
+  // 20 eventos: el lote con Alpaca registra 14 (de download_bars a publish_snapshot) y caben todos.
   const [health, metrics, pipeline] = await Promise.all(
-    ["/health", "/api/v1/metrics", "/api/v1/pipeline?limit=12"].map(url => getJSON(url).catch(() => null)));
+    ["/health", "/api/v1/metrics", "/api/v1/pipeline?limit=20"].map(url => getJSON(url).catch(() => null)));
   const checks = health?.body?.checks ?? {};
-  const ready = health?.ok && health.body.status === "ready";
+  const state = health?.ok && ["ready", "degraded"].includes(health.body.status) ? health.body.status : "unavailable";
   const status = document.getElementById("ops-status");
-  status.textContent = ready ? "Operativo (200)" : `Sin informe válido (${health ? health.status : "sin respuesta"})`;
-  status.dataset.state = ready ? "ready" : "unavailable";
+  status.textContent = state === "ready" ? "Operativo (200)"
+    : state === "degraded" ? "Degradado (200)"
+      : `Sin informe válido (${health ? health.status : "sin respuesta"})`;
+  status.dataset.state = state;
+  text("ops-ai", aiStatus(checks));
   text("ops-run", health?.body?.run_id ?? "—");
   text("ops-as-of", checks.as_of ?? "—");
   text("ops-age", checks.snapshot_age_days === null || checks.snapshot_age_days === undefined
     ? "—" : `${checks.snapshot_age_days} días`);
+  // Versión del III y commit desplegado (RENDER_GIT_COMMIT en Render; DSIA_COMMIT o «local» fuera de él;
+  // «invalid» si la variable no es un hash).
+  text("ops-version", health?.body?.version ? `v${health.body.version} · commit ${health.body.commit}` : "");
   if (metrics?.ok) {
     const latency = metrics.body.latency_ms;
     text("ops-requests", String(metrics.body.requests_total));

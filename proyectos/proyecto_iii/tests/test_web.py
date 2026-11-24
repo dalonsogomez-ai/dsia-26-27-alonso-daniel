@@ -32,10 +32,17 @@ def test_dashboard_consumes_operation_and_analysis_endpoints_without_inline_code
     with TestClient(create_app(report[0])) as client:
         script = client.get("/static/dashboard.js").text
         page = client.get("/").text
-    for endpoint in ('"/health"', '"/api/v1/metrics"', '"/api/v1/pipeline?limit=12"', '"/api/v1/analyze"'):
+    for endpoint in ('"/health"', '"/api/v1/metrics"', '"/api/v1/pipeline?limit=20"', '"/api/v1/analyze"'):
         assert endpoint in script
-    for anchor in ('id="ops"', 'id="ops-events"', 'id="inputs"', 'id="analyze-form"', 'role="alert"'):
+    for anchor in ('id="ops"', 'id="ops-events"', 'id="ops-version"', 'id="inputs"', 'id="analyze-form"',
+                   'role="alert"'):
         assert anchor in page
+    # > C5: el panel Operación pinta la versión y el commit que devuelve /health.
+    assert '"ops-version"' in script and ".commit" in script
+    # > R9: la tarjeta «Estado» distingue «degraded» y muestra el proveedor de IA y su última llamada.
+    assert 'id="ops-ai"' in page and '"ops-ai"' in script
+    for field in ('"degraded"', "ai_provider", "ai_config", "ai_last_call"):
+        assert field in script
     # > La CSP default-src 'self' bloquearía cualquier script, estilo o manejador inline.
     assert "<script>" not in page and "<style" not in page and " style=" not in page
     assert " on" + "click=" not in page and " on" + "submit=" not in page

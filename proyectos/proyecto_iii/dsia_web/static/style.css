@@ -144,6 +144,9 @@ dd { margin: 0; }
 #ops-status[data-state="ready"] { color: var(--accent); }
 #ops-status[data-state="ready"]::before { content: "● "; }
 #ops-status[data-state="unavailable"] { color: var(--loss); }
+#ops-status[data-state="degraded"] { color: var(--accent-3); }
+#ops-status[data-state="degraded"]::before { content: "▲ "; }
+.ops-facts dd.build { margin-top: .35rem; color: var(--muted); font-weight: 500; }
 .mono { font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace !important; }
 .subhead { margin: 0; font-size: 1rem; }
 
