@@ -1,6 +1,6 @@
 # Contrato HTTP de SwarmTrader DSIA
 
-Servicio Starlette que lee un snapshot construido y validado fuera del servidor y expone análisis bajo demanda con el cliente de IA del Proyecto II. El contrato del documento es la versión 1. Las predicciones son retornos decimales a 21 sesiones, calculadas por lotes con el modelo sklearn congelado: el enunciado del II admite el endpoint de predicción «o integrado», y aquí van integradas en `/api/v1/snapshot` y además por símbolo en `/api/v1/predictions/{symbol}`.
+`->` Servicio Starlette que lee un snapshot construido y validado fuera del servidor y expone análisis bajo demanda con el cliente de IA del Proyecto II. El contrato del documento es la versión 1. Las predicciones son retornos decimales a 21 sesiones, calculadas por lotes con el modelo sklearn congelado: el enunciado del II admite el endpoint de predicción «o integrado», y aquí van integradas en `/api/v1/snapshot` y además por símbolo en `/api/v1/predictions/{symbol}`.
 
 | Método | Ruta | Resultado |
 | --- | --- | --- |
@@ -14,18 +14,24 @@ Servicio Starlette que lee un snapshot construido y validado fuera del servidor 
 | GET | /api/v1/metrics | 200 con `uptime_s`, `requests_total`, contadores por ruta y estado, latencia media y p95 aproximada de las últimas 1024 peticiones y `run_id` cargado (`null` sin snapshot) |
 | GET | /api/v1/predictions/{symbol} | 200 con predicción, posición en el ranking y resumen de entrada del símbolo; 422 `invalid_symbol` si no cumple `^[A-Z0-9.]{1,32}$`; 404 `symbol_not_found`; 503 `snapshot_unavailable` |
 
-Cualquier otra ruta responde 404 y un método no admitido, 405. Variables de entorno: `DSIA_SNAPSHOT`, `DSIA_JOURNAL`, `DSIA_API_KEY`, `AI_PROVIDER`, `HF_TOKEN`, `HF_MODEL`, `HF_TIMEOUT`, `HF_MAX_TOKENS` y `HF_INFERENCE_PROVIDER` (ver [`.env.example`](.env.example)).
+`>>` Cualquier otra ruta responde 404 y un método no admitido, 405. Variables de entorno: `DSIA_SNAPSHOT`, `DSIA_JOURNAL`, `DSIA_API_KEY`, `AI_PROVIDER`, `HF_TOKEN`, `HF_MODEL`, `HF_TIMEOUT`, `HF_MAX_TOKENS` y `HF_INFERENCE_PROVIDER` (ver [`.env.example`](.env.example)).
+
+`>` Ejemplos contra la demo local (símbolos `DEMO01`…) o contra el despliegue público, que sirve los 10 símbolos reales de Alpaca:
 
 ```bash
 curl -s http://127.0.0.1:8765/api/v1/predictions/DEMO01
 curl -s -X POST -H 'Content-Type: application/json' -d '{"symbol": "DEMO01"}' http://127.0.0.1:8765/api/v1/analyze
 curl -s 'http://127.0.0.1:8765/api/v1/pipeline?limit=4'
 curl -s http://127.0.0.1:8765/api/v1/metrics
+curl -s https://dsia-swarmtrader.onrender.com/health
+curl -s https://dsia-swarmtrader.onrender.com/api/v1/predictions/AAPL
 ```
+
+`>>` Con datos reales de Alpaca (`data_kind: alpaca`) el snapshot no lleva `input_summary` y `/api/v1/predictions/{symbol}` devuelve `"input": null`: la licencia de Alpaca no permite redistribuir cierres, retornos realizados ni volatilidades.
 
 ## Análisis bajo demanda
 
-`POST /api/v1/analyze` recibe `application/json` con `{"symbol": "AAPL"}` (máximo 2048 bytes; campos extra rechazados). Construye un `AnalysisRequest` del Proyecto II con la predicción del símbolo en el snapshot cargado (`symbols=1`, `mean_prediction` = retorno estimado, RMSE de validación del modelo seleccionado) y llama a `AIClient`. El proveedor sale de `AI_PROVIDER` (`mock` por defecto) y el modelo, el timeout y el proveedor de inferencia de `HF_MODEL`, `HF_TIMEOUT` y `HF_INFERENCE_PROVIDER`, igual que la CLI del II. Al proveedor solo viajan agregados, nunca el nombre del símbolo ni el token.
+`>` `POST /api/v1/analyze` recibe `application/json` con `{"symbol": "AAPL"}` (máximo 2048 bytes; campos extra rechazados). Construye un `AnalysisRequest` del Proyecto II con la predicción del símbolo en el snapshot cargado (`symbols=1`, `mean_prediction` = retorno estimado, RMSE de validación del modelo seleccionado) y llama a `AIClient`. El proveedor sale de `AI_PROVIDER` (`mock` por defecto) y el modelo, el timeout y el proveedor de inferencia de `HF_MODEL`, `HF_TIMEOUT` y `HF_INFERENCE_PROVIDER`, igual que la CLI del II. Al proveedor solo viajan agregados, nunca el nombre del símbolo ni el token.
 
 ```json
 {"symbol": "AAPL", "predicted_return": 0.0123, "run_id": "…", "as_of": "2026-09-28",
@@ -43,15 +49,15 @@ curl -s http://127.0.0.1:8765/api/v1/metrics
 | 422 | `validation_error` | Falta `symbol`, no cumple `^[A-Z0-9.]{1,32}$` o hay campos extra; `detail.fields` lista ubicación y tipo sin repetir el valor |
 | 503 | `snapshot_unavailable` / `ai_unavailable` | Sin snapshot, o `AIClientError` (proveedor caído, sin `HF_TOKEN`, configuración inválida) |
 
-`AnalysisRequest` del II no tiene campo de pregunta libre, así que la API no acepta `question`. Ni el token ni el texto del proveedor se escriben en los logs: la línea INFO `analyze` registra `request_id`, símbolo, proveedor, modelo y `latency_ms`.
+`~>` `AnalysisRequest` del II no tiene campo de pregunta libre, así que la API no acepta `question`. Ni el token ni el texto del proveedor se escriben en los logs: la línea INFO `analyze` registra `request_id`, símbolo, proveedor, modelo y `latency_ms`.
 
 ## Journal del lote
 
-`GET /api/v1/pipeline` lee como máximo los últimos 64 KiB del JSONL y devuelve `{"events": [...], "returned": n, "skipped_lines": k, "last_run_id": "…"}`. Las líneas corruptas o sin `stage`/`status` se cuentan en `skipped_lines` y no rompen la respuesta. De cada evento solo salen `timestamp`, `stage`, `status`, `duration_ms`, `run_id`, `error_type`, `rows`, `symbols` e `input_sha256`; cualquier otro campo, como una ruta, se descarta.
+`>` `GET /api/v1/pipeline` lee como máximo los últimos 64 KiB del JSONL y devuelve `{"events": [...], "returned": n, "skipped_lines": k, "last_run_id": "…"}`. Las líneas corruptas o sin `stage`/`status` se cuentan en `skipped_lines` y no rompen la respuesta. De cada evento solo salen `timestamp`, `stage`, `status`, `duration_ms`, `run_id`, `error_type`, `rows`, `symbols` e `input_sha256`; cualquier otro campo, como una ruta, se descarta.
 
 ## Métricas de servicio
 
-`GET /api/v1/metrics` devuelve contadores en memoria del proceso (se reinician con él y no se comparten entre workers). Las rutas se agrupan por plantilla (`/api/v1/predictions/{symbol}`, `/static`, `unmatched` para 404 sin ruta) para acotar la cardinalidad. La petición en curso no se cuenta porque se registra al terminar.
+`>` `GET /api/v1/metrics` devuelve contadores en memoria del proceso (se reinician con él y no se comparten entre workers). Las rutas se agrupan por plantilla (`/api/v1/predictions/{symbol}`, `/static`, `unmatched` para 404 sin ruta) para acotar la cardinalidad. La petición en curso no se cuenta porque se registra al terminar.
 
 ```json
 {"uptime_s": 42.5, "requests_total": 4, "run_id": "…",
@@ -61,14 +67,14 @@ curl -s http://127.0.0.1:8765/api/v1/metrics
 
 ## Salud
 
-`checks` contiene `snapshot_loaded`, `data_kind`, `as_of`, `snapshot_age_days` (días naturales UTC desde `generated_at`) y `journal_available` (el JSONL de `DSIA_JOURNAL` existe y se puede leer). Ninguna respuesta incluye rutas del disco. El journal es informativo: su ausencia no cambia `status`.
+`>` `checks` contiene `snapshot_loaded`, `data_kind`, `as_of`, `snapshot_age_days` (días naturales UTC desde `generated_at`) y `journal_available` (el JSONL de `DSIA_JOURNAL` existe y se puede leer). Ninguna respuesta incluye rutas del disco. El journal es informativo: su ausencia no cambia `status`.
 
 ## Errores
 
-Los errores comparten la forma `{"error": "<código>", "detail": {"code": "<código>", "message": "…"}, "request_id": "…"}`. `detail` se mantiene por compatibilidad con la RC1. También los del enrutador: una ruta o estático inexistente devuelve `404 not_found` y un método no admitido `405 method_not_allowed` (con la cabecera `Allow`).
+`>` Los errores comparten la forma `{"error": "<código>", "detail": {"code": "<código>", "message": "…"}, "request_id": "…"}`. `detail` se mantiene por compatibilidad con la RC1. También los del enrutador: una ruta o estático inexistente devuelve `404 not_found` y un método no admitido `405 method_not_allowed` (con la cabecera `Allow`).
 
 ## Cabeceras y trazabilidad
 
-Todas las respuestas incluyen `X-Request-ID` (se reutiliza el valor entrante si cumple `^[A-Za-z0-9._-]{8,128}$`; si no, se genera un uuid4 en hexadecimal), `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` y `Referrer-Policy: no-referrer`. Cada petición deja una línea INFO `request request_id=… method=… route=… status=… latency_ms=…` y suma un contador en memoria por plantilla de ruta y estado. El dashboard no usa scripts ni estilos inline, por lo que la CSP no necesita excepciones.
+`>` Todas las respuestas incluyen `X-Request-ID` (se reutiliza el valor entrante si cumple `^[A-Za-z0-9._-]{8,128}$`; si no, se genera un uuid4 en hexadecimal), `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` y `Referrer-Policy: no-referrer`. Cada petición deja una línea INFO `request request_id=… method=… route=… status=… latency_ms=…` y suma un contador en memoria por plantilla de ruta y estado. El dashboard no usa scripts ni estilos inline, por lo que la CSP no necesita excepciones.
 
-El snapshot distingue datos sintéticos, Alpaca históricos y otra fuente local. Incluye el hash de entrada, del modelo y del propio informe, fecha del último dato, nombre y versión del modelo, baseline Dummy y comparativa en validation, holdout congelado y estado de IA. El campo opcional `input_summary` resume los datos de entrada por símbolo: sesiones, último cierre, retorno realizado de las últimas 21 sesiones y volatilidad anualizada de los últimos 63 retornos diarios. Un snapshot anterior sin ese campo conserva su `run_id` y sigue siendo válido. La aplicación carga una única ruta configurada por el operador. Los fallos devuelven códigos estables y los paths locales quedan en el proceso. El servidor arranca en loopback por defecto.
+`>>` El snapshot distingue datos sintéticos, Alpaca históricos y otra fuente local. Incluye el hash de entrada, del modelo y del propio informe, fecha del último dato, nombre y versión del modelo, baseline Dummy y comparativa en validation, holdout congelado y estado de IA. El campo opcional `input_summary` resume los datos de entrada por símbolo: sesiones, último cierre, retorno realizado de las últimas 21 sesiones y volatilidad anualizada de los últimos 63 retornos diarios. Un snapshot anterior sin ese campo conserva su `run_id` y sigue siendo válido. La aplicación carga una única ruta configurada por el operador. Los fallos devuelven códigos estables y los paths locales quedan en el proceso. El servidor arranca en loopback por defecto.

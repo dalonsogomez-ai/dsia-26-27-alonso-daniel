@@ -2,6 +2,16 @@
 
 `->` Registro de las herramientas de IA usadas en los ficheros comunes a los tres proyectos: README raíz, `README_DSIA.md`, `proyectos/README.md`, `docs/`, el workflow de CI, `requirements.txt` raíz, `.mailmap` y los README de los Temas 1 y 2. Cada proyecto tiene además su propio registro: [I](../proyectos/proyecto_i/AI_USAGE.md), [II](../proyectos/proyecto_ii/AI_USAGE.md) y [III](../proyectos/proyecto_iii/AI_USAGE.md).
 
+## 23/11/2026 · OpenAI Codex (modelo gpt-6.2-sol): integración, auditoría docente y diagramas
+
+| Campo | Contenido |
+| --- | --- |
+| Qué se pidió | Integrar el II y el III en el repositorio de entrega y contrastarlos con los enunciados y la rúbrica docente |
+| Qué se aceptó | Workflow de CI del III, `README_DSIA.md`, arquitectura con los diagramas Excalidraw y sus SVG, primera matriz de trazabilidad e índice `proyectos/README.md` |
+| Qué se rechazó o no se adoptó | La explicación con un proveedor externo quedó como integración opcional del lote; se usa `mock` en CI |
+| Cómo se verificó | Pruebas del III, smoke y prueba de navegador en local; las cifras de esa sesión no quedaron registradas y la verificación con números es la de las entradas siguientes |
+| Commits | [`3d991d2`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/commit/3d991d2), [`4da7058`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/commit/4da7058) y [`ab75ded`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/commit/ab75ded) |
+
 ## 23/11/2026 · Claude Code (modelo Claude Opus 5.5)
 
 | Campo | Contenido |
@@ -27,4 +37,13 @@
 | Qué se pidió | Que el despliegue de Render muestre los símbolos reales y quede completamente funcional en `main`, con los enlaces de Render en el README |
 | Qué se aceptó | PR #2 (descarga de Alpaca en el lote y en el build con secret file) y PR #3 (refresco al arrancar con las claves como variables de entorno, sección «Demo en vivo (Render)» del README raíz y `render.yaml` con `ALPACA_*` como `sync: false`), ambos con CI verde antes de fusionar |
 | Qué se rechazó o no se adoptó | Mostrar precios de Alpaca en la web pública (sus condiciones lo prohíben; el autor eligió publicar solo predicciones). Pasar las claves como `ARG` al build de Docker. Introducir yo las claves en Render: las creó el autor en el panel |
-| Cómo se verificó | https://dsia-swarmtrader.onrender.com/health → `ready`, `data_kind: alpaca`, último dato 2026-11-20; `smoke_test.sh` y `browser_smoke.py --kind "Datos reales · Alpaca" --expect-pipeline` correctos contra la URL pública; `/api/v1/snapshot` sin `last_close` |
+| Cómo se verificó | https://dsia-swarmtrader.onrender.com/health → `ready`, `data_kind: alpaca`, último dato 2026-11-20; `smoke_test.sh` y `browser_smoke.py --kind "Datos reales · Alpaca" --expect-pipeline` correctos contra la URL pública; `/api/v1/snapshot` sin `last_close`; CI de `main` en verde en el run [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693) |
+
+## 24/11/2026 · Claude Code (modelo Claude Opus 5.5): documentación con la leyenda de la wiki
+
+| Campo | Contenido |
+| --- | --- |
+| Qué se pidió | Reescribir la documentación del III y de la raíz con el estilo del README del Proyecto I (leyenda entre comillas invertidas, títulos limpios, cifras fechadas con su run y desarrollo por fechas) y ordenarla según la Entrega del enunciado del III |
+| Qué se aceptó | README raíz con la leyenda al principio, CI fechado con el run 45288524693 y desarrollo por fechas; `README_DSIA.md` y `proyectos/README.md` con marcadores y despliegue con datos reales; arquitectura con la cadena completa y el arranque con `serve.py`; matriz de trazabilidad al día con `main` en `bd3b0fa`; anclas al README del II sin el guion inicial (por ejemplo `#motivación`); entrada de Codex (gpt-6.2-sol) para los ficheros comunes del 23/11 |
+| Qué se rechazó o no se adoptó | Fechas de octubre para el II o el III: no hay commits y no se fabrican. Tocar código, los README del I y del II o los diagramas: fuera del alcance de esta revisión |
+| Cómo se verificó | Pruebas del III en local con `.venv-ii`: 123 passed. Comprobador de enlaces relativos y anclas sobre los ficheros editados. Cifras contrastadas con el log del run 45288524693 (I 178 / 99,31 %, II 74 / 83,42 %, III 123 / 97,22 %, Docker correcto) |

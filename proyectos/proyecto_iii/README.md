@@ -1,71 +1,183 @@
-# Proyecto III · Aplicación de investigación SwarmTrader
+# Desarrollo de Soluciones de IA — Proyecto III
 
-El dashboard muestra retornos estimados a 21 sesiones, un baseline, los datos de entrada por símbolo y la procedencia de la inferencia. Consume el informe de la API con una petición HTTP real, lanza análisis bajo demanda con `POST /api/v1/analyze` y su panel **Operación** lee `/health`, `/api/v1/metrics` y `/api/v1/pipeline`. El [diagrama](../../docs/ARQUITECTURA_DSIA.md) explica por qué el cálculo se ejecuta por lotes. La explicación de la demo usa el cliente `mock` del Proyecto II.
+**Daniel Alonso Gómez · Curso 2026–2027 · Aplicación de investigación SwarmTrader**
 
--> **Tecnología.** Backend con **Starlette** (el núcleo ASGI de FastAPI) servido por Uvicorn, y dashboard con **HTML/JS propio** en `dsia_web/static/` sin dependencias externas ni CDN. Es la opción «FastAPI+HTML» del enunciado: Starlette aporta el enrutado y el middleware sin la capa de validación automática, que aquí hace pydantic de forma explícita.
+## **Leyenda utilizada en la wiki**
 
-~> **Cadena.** Ingesta (Proyecto I, Alpaca) → procesamiento y modelo sklearn (Proyecto II) → lote `dsia_web.build` que congela un snapshot validado → API → dashboard → contenedor o PaaS.
+`->` Inicio, objetivo o tarea planteada.
+
+`~>` Desarrollo, cambio o ajuste realizado.
+
+`>` Paso técnico llevado a cabo.
+
+`>>` Evidencia, archivo o comprobación del paso.
+
+`=>` Resultado obtenido o estado final de la fecha.
+
+[![CI](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml)
+
+`->` Llevar a producción el núcleo del [Proyecto II](../proyecto_ii/README.md) siguiendo el [enunciado del profesor](https://github.com/dmartincc/dsia-26-27/blob/b76b9508acd7ecdf41da9890d35dfdefaa20847f/proyectos/proyecto_iii/README.md): mismos datos de Alpaca, mismo modelo sklearn y mismo cliente de IA, ampliados con una API, un dashboard web con panel de operación, pruebas de extremo a extremo y un despliegue público. El dashboard ordena los retornos estimados a 21 sesiones de diez acciones, los compara con un baseline y explica cada símbolo bajo demanda.
+
+`=>` **Despliegue público:** [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com), con datos reales de Alpaca descargados al arrancar (último dato 2026-11-20) y solo predicciones y métricas en la respuesta pública. La primera visita tras un rato sin tráfico tarda unos 50 s, porque el plan gratuito duerme la instancia.
+
+## Requisitos mínimos y evidencia
+
+`>>` Cada requisito del enunciado del III con el fichero, el endpoint o la prueba que lo demuestra. Las cifras de pruebas proceden del run [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693) de `main` (commit `bd3b0fa`, 24/11/2026).
+
+| Requisito del III | Evidencia (fichero, endpoint, prueba) |
+| --- | --- |
+| 1. Arquitectura modular y README claro | Paquete [`dsia_web/`](dsia_web) con un módulo por responsabilidad (ver [Arquitectura](#arquitectura)); el III importa preparación, entrenamiento, inferencia y `AIClient` del II sin reescribirlos. [Diagrama Excalidraw](../../docs/ARQUITECTURA_DSIA.md#proyecto-iii--lote-y-servicio-http) |
+| 2. Procesamiento de datos real (dataset del II) | [`alpaca_source.py`](dsia_web/alpaca_source.py) descarga las barras diarias de los 10 símbolos del I y del II; [`serve.py`](dsia_web/serve.py) reentrena y publica al arrancar. En Render: `data_kind: alpaca`, 22 350 filas, último dato 2026-11-20. Histórico del II reproducido con `from-run`: [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json). Pruebas: `tests/test_alpaca.py`, `tests/test_serve.py` |
+| 3. Integración con sklearn e IA generativa | [`build.py`](dsia_web/build.py) ejecuta la cadena del II (preparar → entrenar → holdout → inferir); [`ai.py`](dsia_web/ai.py) configura el `AIClient` del II desde `AI_PROVIDER` y `HF_*`. Endpoints `GET /api/v1/predictions/{symbol}` y `POST /api/v1/analyze`. Proveedor `mock` justificado en CI; Hugging Face listo con `HF_TOKEN`. Pruebas: `tests/test_build.py`, `tests/test_analyze.py` |
+| 4. Pruebas automatizadas y CI | [`tests/`](tests): **123 tests y 97,22 % de cobertura** de `dsia_web` en el run 45288524693 (umbral 90 %), más [`smoke_test.sh`](scripts/smoke_test.sh), [`browser_smoke.py`](tests/browser_smoke.py) con Chromium y el job Docker del [workflow](../../.github/workflows/ci.yml) |
+| 5. Dashboard web o de monitorización | [`dsia_web/static/`](dsia_web/static): **Producto** (ranking, filtro, evidencia del modelo, cortes temporales, «Explicar símbolo») y **Operación** (`/health`, `/api/v1/metrics`, `/api/v1/pipeline`). Prueba: `tests/test_web.py` y `browser_smoke.py` |
+| 6. Despliegue accesible y empaquetado | [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com) con el [`Dockerfile`](Dockerfile) y [`render.yaml`](../../render.yaml); también [`Procfile`](../../Procfile). Ver [Despliegue en Render](#despliegue-en-render) y [Empaquetado](#empaquetado). Prueba: `tests/test_packaging.py` y job `proyecto-iii-docker` |
+| 7. Exposición de 5–7 minutos con demo | [Guion de la exposición](#guion-de-la-exposición) sobre la URL de Render, con plan de contingencia en local |
+| 8. Política de uso de IA | [`AI_USAGE.md`](AI_USAGE.md) con herramienta, modelo, lo aceptado, lo rechazado, la verificación y los commits |
+
+| Entrega del III | Dónde |
+| --- | --- |
+| Mismo repositorio del Proyecto II | `proyectos/proyecto_ii/` y `proyectos/proyecto_iii/` en el [repositorio de entrega](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel) |
+| Cómo entrenar e inferir | [Entrenar e inferir](#entrenar-e-inferir) |
+| Cómo arrancar la API | [Arrancar la API](#arrancar-la-api) |
+| Cómo arrancar el dashboard | [Arrancar el dashboard](#arrancar-el-dashboard) |
+| URL de despliegue | [Despliegue en Render](#despliegue-en-render) |
+| Evidencia de que el dashboard consume el backend real | [Evidencia de que el dashboard consume el backend real](#evidencia-de-que-el-dashboard-consume-el-backend-real) |
+
+## Arquitectura
+
+`->` El enunciado pide la cadena Ingesta → Procesamiento → Modelo / IA → API → Dashboard → Despliegue. Con barras diarias y un horizonte de 21 sesiones, el cálculo se hace **por lotes**: el lote congela un snapshot validado y el servidor solo lo lee, así que las lecturas de la API no dependen del modelo ni del proveedor de IA; solo `POST /api/v1/analyze` llama al cliente de IA.
+
+```text
+Ingesta  ─────────►  Procesamiento  ─────►  Modelo / IA  ──────►  API  ─────────►  Dashboard  ─────►  Despliegue
+alpaca_source.py     contrato del II        sklearn del II         app.py           static/            Dockerfile
+(barras Alpaca o     (validar, factores,    + snapshot.py          (Starlette +     (HTML/JS/CSS       render.yaml
+ demo sintética)      split purgado)        + ai.py (AIClient)      Uvicorn)         propios)          serve.py
+```
+
+| Etapa | Módulo | Qué hace |
+| --- | --- | --- |
+| Ingesta | [`alpaca_source.py`](dsia_web/alpaca_source.py) | Descarga con `alpaca-py` las barras diarias ajustadas por split (feed SIP, reintento en IEX), conserva las fechas comunes y escribe solo `date, symbol, close, volume`. Sin credenciales, `build demo` genera barras sintéticas reproducibles |
+| Procesamiento | [`build.py`](dsia_web/build.py) con el paquete del II | Valida el CSV con el contrato del II (etapa `validate_input`), construye factores causales y separa train, validation y holdout con purga de etiquetas |
+| Modelo / IA | [`build.py`](dsia_web/build.py), [`snapshot.py`](dsia_web/snapshot.py), [`ai.py`](dsia_web/ai.py) | Compara Dummy, Ridge y Swarm en validation, evalúa el holdout una vez, infiere y publica un snapshot tipado con pydantic. La IA explica el resultado en el lote y bajo demanda |
+| API | [`app.py`](dsia_web/app.py), [`observability.py`](dsia_web/observability.py), [`journal.py`](dsia_web/journal.py) | Starlette sirve salud, snapshot, predicción por símbolo, análisis, journal y métricas, con `X-Request-ID`, latencia en logs y cabeceras de seguridad. Contrato en [API.md](API.md) |
+| Dashboard | [`static/`](dsia_web/static) | `index.html`, `dashboard.js` y `style.css` propios, sin CDN ni código inline; todo llega por `fetch` a la API del mismo origen |
+| Despliegue | [`Dockerfile`](Dockerfile), [`serve.py`](dsia_web/serve.py), [`render.yaml`](../../render.yaml) | Imagen `python:3.12-slim` con usuario sin privilegios y `HEALTHCHECK`; al arrancar refresca el informe con Alpaca y lanza Uvicorn en `$PORT` |
+
+`~>` **Tecnología.** Backend con **Starlette**, el núcleo ASGI de FastAPI, servido por Uvicorn, y dashboard con HTML y JavaScript propios. Es la opción «FastAPI+HTML» del enunciado: Starlette aporta el enrutado y el middleware, y la validación la hace pydantic de forma explícita. [`evidence.py`](dsia_web/evidence.py) exporta un resumen agregado del snapshot sin precios.
+
+## Instalación
+
+`>` Desde la raíz del repositorio, con **Python 3.12**. El II y el III comparten el entorno `.venv-ii`, separado del I porque este fija pandas 3 y el II pandas 2:
+
+```bash
+python3.12 -m venv .venv-ii
+.venv-ii/bin/python -m pip install -r proyectos/proyecto_ii/requirements.txt
+export PYTHONPATH=proyectos/proyecto_ii:proyectos/proyecto_iii MPLBACKEND=Agg AI_PROVIDER=mock
+```
+
+`>>` `proyectos/proyecto_ii/requirements.txt` fija también las dependencias directas del III (starlette, uvicorn, pydantic, httpx). [`requirements-e2e.txt`](requirements-e2e.txt) añade Playwright para la prueba de navegador y [`requirements-runtime.txt`](requirements-runtime.txt) es el subconjunto de ejecución de la imagen Docker. Las variables de configuración están en [`.env.example`](.env.example); no hace falta ninguna clave para la demo.
 
 ## Entrenar e inferir
 
-El entrenamiento, la evaluación única del holdout y la inferencia viven en el [Proyecto II](../proyecto_ii/README.md); el III no reentrena. `dsia_web.build demo` reproduce la cadena entera con datos sintéticos (`generate_bars → prepare → train → holdout → infer_snapshot → publish_snapshot`) y `dsia_web.build from-run` reutiliza un run congelado del II (ver [Informe con el histórico](#informe-con-el-histórico-del-proyecto-ii)). La predicción se calcula por lotes y la API la sirve integrada en el snapshot y por símbolo (`/api/v1/predictions/{symbol}`); la IA generativa se invoca bajo demanda con `POST /api/v1/analyze`.
+`->` El entrenamiento, la evaluación única del holdout y la inferencia son los del II; el III los orquesta en un lote que termina publicando el snapshot que sirve la API.
+
+`>` Demo completa con datos sintéticos (`generate_bars → prepare → train → holdout → infer_snapshot → publish_snapshot`), en un destino nuevo:
+
+```bash
+.venv-ii/bin/python -m dsia_web.build demo --work runs/demo/work \
+  --output runs/demo/snapshot.json --journal runs/demo/pipeline.jsonl
+```
+
+`>` Con datos reales de Alpaca, si las variables `ALPACA_PAPER_API_KEY_ID` y `ALPACA_PAPER_API_SECRET_KEY` están en el entorno (`auto` cae en la demo si no lo están):
+
+```bash
+.venv-ii/bin/python -m dsia_web.build alpaca --work runs/alpaca/work \
+  --output runs/alpaca/snapshot.json --journal runs/alpaca/pipeline.jsonl
+```
+
+`~>` `from-run` reutiliza un modelo ya entrenado y evaluado por el II, sin reentrenar (ver [Informe con el histórico del Proyecto II](#informe-con-el-histórico-del-proyecto-ii)). La receta paso a paso del II está en su [README](../proyecto_ii/README.md#reproducir-sin-claves-ni-datos-de-terceros).
+
+`>>` `--journal` escribe un JSONL con el inicio, el resultado y la duración de cada etapa; un fallo registra su tipo y no deja un snapshot parcial. La predicción por lotes se consulta después en el snapshot completo o por símbolo con `GET /api/v1/predictions/{symbol}`; la IA generativa se invoca bajo demanda con `POST /api/v1/analyze`.
 
 ## Arranque local de API y dashboard
 
-Ejecuta desde la raíz del repositorio. El entorno de referencia es `.venv-ii` (Python 3.12 con las dependencias fijadas del II).
+`>` Con el snapshot generado, un solo proceso Uvicorn sirve la API y el dashboard.
 
-1. **Entorno.** `python3.12 -m venv .venv-ii` y `.venv-ii/bin/python -m pip install -r proyectos/proyecto_ii/requirements.txt`.
-2. **Informe y configuración.** Genera la demo una vez en un destino nuevo.
-
-   ```bash
-   export PYTHONPATH=proyectos/proyecto_ii:proyectos/proyecto_iii MPLBACKEND=Agg AI_PROVIDER=mock
-   .venv-ii/bin/python -m dsia_web.build demo --work runs/demo/work \
-     --output runs/demo/snapshot.json --journal runs/demo/pipeline.jsonl
-   export DSIA_SNAPSHOT="$PWD/runs/demo/snapshot.json" DSIA_JOURNAL="$PWD/runs/demo/pipeline.jsonl"
-   ```
-
-3. **Arranque.** `.venv-ii/bin/python -m uvicorn dsia_web.app:app --host 127.0.0.1 --port 8765` y abre [el dashboard local](http://127.0.0.1:8765/). La misma orden sirve la API y el dashboard. En producción cambia a `--host 0.0.0.0 --port "$PORT"`.
-4. **Smoke test.** En otra terminal: `PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8765`. Prueba `/health`, `/api/v1/snapshot`, `/api/v1/predictions/<primer símbolo del informe>`, `POST /api/v1/analyze` y `/api/v1/metrics`, y exige el mismo `run_id` en todos.
-5. **Recuperación.** Conserva el snapshot anterior. Si el nuevo no supera las comprobaciones, apunta `DSIA_SNAPSHOT` a la versión previa y reinicia el servicio. Un snapshot ausente o inválido hace que `/health` responda 503. El rollback de código se describe en el [RC](RELEASE.md#rollback).
-
-## Prueba de navegador en local
+### Arrancar la API
 
 ```bash
-uv pip install -p .venv-ii -r proyectos/proyecto_iii/requirements-e2e.txt   # o pip install -r …
+export DSIA_SNAPSHOT="$PWD/runs/demo/snapshot.json" DSIA_JOURNAL="$PWD/runs/demo/pipeline.jsonl"
+.venv-ii/bin/python -m uvicorn dsia_web.app:app --host 127.0.0.1 --port 8765
+```
+
+`>` En otra terminal, el smoke HTTP comprueba `/health`, `/api/v1/snapshot`, la predicción del primer símbolo, `POST /api/v1/analyze` y `/api/v1/metrics`, y exige el mismo `run_id` en todos:
+
+```bash
+PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8765
+curl -s http://127.0.0.1:8765/api/v1/predictions/DEMO01
+curl -s -X POST -H 'Content-Type: application/json' -d '{"symbol": "DEMO01"}' http://127.0.0.1:8765/api/v1/analyze
+```
+
+`>>` Endpoints, errores tipados y cabeceras: [API.md](API.md). Con `DSIA_API_KEY` definida, `POST /api/v1/analyze` exige `X-API-Key`; el resto son de lectura. En producción el host cambia a `--host 0.0.0.0 --port "$PORT"`.
+
+### Arrancar el dashboard
+
+`>` Con la API en marcha, abrir [http://127.0.0.1:8765/](http://127.0.0.1:8765/). La página carga `/api/v1/snapshot`, `/health`, `/api/v1/metrics` y `/api/v1/pipeline` por HTTP y lanza `POST /api/v1/analyze` desde el formulario «Explicar símbolo».
+
+`>` Prueba de navegador con Chromium real contra el servicio local:
+
+```bash
+.venv-ii/bin/python -m pip install -r proyectos/proyecto_iii/requirements-e2e.txt
 .venv-ii/bin/python -m playwright install chromium --only-shell
 .venv-ii/bin/python proyectos/proyecto_iii/tests/browser_smoke.py http://127.0.0.1:8765/ \
   --journal runs/demo/pipeline.jsonl --expect-pipeline --screenshot runs/demo/dashboard.png
 ```
 
-La prueba abre Chromium contra el servicio en marcha y comprueba que la respuesta de `/api/v1/snapshot`, el DOM, `/health`, el panel Operación y el journal comparten `run_id`; que la tabla de datos de entrada y el ranking cuadran con la API; que «Explicar símbolo» hace un `POST /api/v1/analyze` real y que un 503 simulado se muestra como alerta; y que no hay errores de consola (incluidas violaciones de CSP) ni scroll horizontal a 390 px.
+`~>` **Recuperación.** Conserva el snapshot anterior: si el nuevo no supera el smoke, apunta `DSIA_SNAPSHOT` a la versión previa y reinicia. Un snapshot ausente o inválido deja `/health` en 503 y no se sirve. El rollback de código está en el [RC](RELEASE.md#rollback).
+
+## Despliegue en Render
+
+`=>` **URL de despliegue:** [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com) (dashboard) · API en [`/health`](https://dsia-swarmtrader.onrender.com/health), [`/api/v1/snapshot`](https://dsia-swarmtrader.onrender.com/api/v1/snapshot), [`/api/v1/predictions/AAPL`](https://dsia-swarmtrader.onrender.com/api/v1/predictions/AAPL), [`/api/v1/metrics`](https://dsia-swarmtrader.onrender.com/api/v1/metrics) y [`/api/v1/pipeline`](https://dsia-swarmtrader.onrender.com/api/v1/pipeline).
+
+`~>` Web Service de Render con la imagen del [`Dockerfile`](Dockerfile), región Frankfurt, plan free, `healthCheckPath: /health` y `AI_PROVIDER=mock`, desplegado desde `main` en cada commit. Es la misma imagen que construye y prueba el job `proyecto-iii-docker` del CI.
+
+### Datos reales de Alpaca
+
+`->` El despliegue sirve barras diarias reales de AAPL, AMZN, GOOGL, JNJ, JPM, META, MSFT, NVDA, TSLA y XOM, el universo del Proyecto I.
+
+`>` **Al arrancar el contenedor**, [`serve.py`](dsia_web/serve.py) (el `CMD` de la imagen) comprueba si hay credenciales en las variables `ALPACA_PAPER_API_KEY_ID` y `ALPACA_PAPER_API_SECRET_KEY` del servicio. Si el informe de la imagen es la demo o es de otro día, descarga las barras desde 2018 hasta la última sesión cerrada, reentrena con la cadena del II (preparar → entrenar → un toque del holdout → inferir) y publica el snapshot con `data_kind: alpaca` antes de lanzar Uvicorn. Si la descarga falla, registra el aviso y sirve el informe de la imagen. Con 0,1 CPU y 512 MB el refresco tarda unos 40 s, que se suman al arranque en frío.
+
+`>` **En el build de la imagen**, `python -m dsia_web.build auto` usa el secret file opcional `alpaca.env`, que BuildKit monta solo durante ese `RUN`. Sin él (CI, local, o claves solo como variables, que Render pasa al build como *build args* y por eso no se leen allí), la imagen lleva la demo sintética.
+
+`~>` **Procedencia y licencia.** Fuente: [Alpaca Market Data API](https://docs.alpaca.markets/us/docs/about-market-data-api), mediante `alpaca-py`, con claves de paper trading que dan acceso a datos de mercado. Alpaca [no permite redistribuir los datos obtenidos con su API](https://alpaca.markets/support/redistribute-alpaca-api). Por eso el informe público con datos reales **solo publica símbolos, retornos predichos y métricas de evaluación**: no incluye `input_summary` (cierres, retorno realizado ni volatilidad). El CSV descargado se borra al terminar y las claves no quedan en ninguna capa de la imagen ni en los logs. Las claves las introdujo el autor en el panel de Render (`sync: false` en `render.yaml`).
+
+`>>` Comprobado el 23/11/2026 contra la URL pública: `/health` → `200 ready` con `data_kind: alpaca`, 10 símbolos y último dato **2026-11-20**; el journal registra `download_bars` con **22 350 filas**; `scripts/smoke_test.sh https://dsia-swarmtrader.onrender.com` → «Smoke correcto»; `tests/browser_smoke.py https://dsia-swarmtrader.onrender.com/ --kind "Datos reales · Alpaca" --expect-pipeline` → «OK · API, salud y operación, datos de entrada, análisis y su error, ranking, filtro, cortes y móvil»; y `/api/v1/snapshot` sin ningún `last_close`. [Captura del despliegue](evidencia/dashboard_render.png).
+
+### Métricas del modelo desplegado
+
+`>>` Valores que muestra la [captura del despliegue](evidencia/dashboard_render.png) del 23/11/2026 (lote de las 23:23 UTC, último dato 2026-11-20). El objetivo es el retorno del precio a 21 sesiones, en decimal; el error se expresa en puntos porcentuales de retorno.
+
+| Métrica | Cálculo | Valor | Interpretación |
+| --- | --- | --- | --- |
+| RMSE de validation | `sqrt(media((y − ŷ)²))` sobre el bloque de validation | Dummy 9,96 % · Ridge 10,19 % · **Swarm 9,92 %** | Swarm se elige por menor RMSE, con una ventaja de 0,04 puntos sobre predecir la media |
+| RMSE del holdout | Mismo cálculo en el holdout, evaluado una sola vez con el modelo congelado | 9,07 % | Error típico del retorno a 21 sesiones fuera de muestra |
+| MAE del holdout | Media del valor absoluto de `y − ŷ` en el holdout | 6,82 % | Error absoluto medio, menos sensible a los meses extremos |
+| R² del holdout | `1 − SSE / SST` respecto a la media del holdout | −0,0032 | Casi nulo: el modelo no explica mejor que la media. El panel muestra el aviso «Ventaja económica sin demostrar» |
+| Evaluaciones del holdout | Contador del guard del II | 1 | El holdout no se usó para elegir modelo ni hiperparámetros |
+
+`~>` Los cortes de esa ejecución son train 2019-01-03 → 2023-09-07 (11 570 filas), validation 2023-09-08 → 2025-04-01 (3 710) y holdout 2025-04-02 → 2026-11-20 (3 920), con la última etiqueta de cada bloque antes del inicio del siguiente. Las predicciones son señales de investigación, no recomendaciones de inversión, y no descuentan comisiones ni impuestos.
 
 ## Evidencia de que el dashboard consume el backend real
 
-- => `browser_smoke.py` intercepta las respuestas reales de `/api/v1/snapshot` y `/api/v1/analyze` y compara su contenido con lo que pinta la página.
-- => El [workflow](../../.github/workflows/ci.yml) genera otro snapshot desde cero en Linux, arranca Uvicorn, ejecuta `smoke_test.sh` y `browser_smoke.py`, y publica el artefacto `dsia-dashboard-sintetico` con `dashboard.png` y `pipeline.jsonl` del mismo run.
-- => El panel **Operación** muestra en vivo `/health`, los contadores de `/api/v1/metrics` (crecen con cada petición del propio dashboard) y los eventos del lote servidos por `/api/v1/pipeline`.
+- `>>` [`browser_smoke.py`](tests/browser_smoke.py) abre Chromium, intercepta las respuestas reales de `/api/v1/snapshot` y `/api/v1/analyze` y comprueba que el DOM pinta lo mismo: número y orden de filas del ranking, `run_id` en la página, en `/health`, en el panel Operación y en el último evento del journal, y la respuesta de «Explicar símbolo». Un 503 simulado de `/api/v1/analyze` debe mostrarse como alerta; no admite errores de consola (incluidas violaciones de CSP) ni scroll horizontal a 390 px.
+- `>>` El [workflow](../../.github/workflows/ci.yml) genera un snapshot desde cero en Linux, arranca Uvicorn y ejecuta `smoke_test.sh` y `browser_smoke.py --expect-pipeline`. En el run [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693) ambos pasan («Smoke correcto» y «OK · API, salud y operación, datos de entrada, análisis y su error, ranking, filtro, cortes y móvil») y el artefacto `dsia-dashboard-sintetico` guarda la captura y el `pipeline.jsonl` del mismo run.
+- `>>` La misma prueba pasa contra la URL de Render con `--kind "Datos reales · Alpaca"`; la [captura](evidencia/dashboard_render.png) muestra el panel Operación con `run_id`, 33 peticiones atendidas, latencia media y p95, y los 12 eventos del lote, y el análisis de META con su `request_id`.
+- `=>` El panel **Operación** es la prueba en vivo durante la demo: los contadores de `/api/v1/metrics` crecen con cada petición del propio dashboard y el botón «Actualizar» los vuelve a pedir.
 
-## Empaquetado y despliegue
+## Empaquetado
 
-`=>` **URL de despliegue:** [https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com) (dashboard) · API en [`https://dsia-swarmtrader.onrender.com/health`](https://dsia-swarmtrader.onrender.com/health), [`/api/v1/metrics`](https://dsia-swarmtrader.onrender.com/api/v1/metrics), [`/api/v1/pipeline`](https://dsia-swarmtrader.onrender.com/api/v1/pipeline). Web Service de Render con la imagen [Dockerfile](Dockerfile) (región Frankfurt, plan free, `healthCheckPath: /health`, `AI_PROVIDER=mock`), desplegado desde `main` con auto-deploy en cada commit. En el plan free la instancia se duerme tras unos minutos sin tráfico y la primera petición tarda unos 50 s; para la exposición conviene abrir la URL antes. Comprobado el 23/11/2026: `/health` → `200 ready`, `scripts/smoke_test.sh https://dsia-swarmtrader.onrender.com` → «Smoke correcto», y `tests/browser_smoke.py https://dsia-swarmtrader.onrender.com/ --kind "Datos reales · Alpaca" --expect-pipeline` → «OK · API, salud y operación, datos de entrada, análisis y su error, ranking, filtro, cortes y móvil» con Chromium real. Desde el 23/11/2026 sirve **datos reales de Alpaca**: `data_kind: alpaca`, 10 símbolos, último dato 2026-11-20 (la última sesión cerrada), 22 350 filas descargadas al arrancar, modelo `swarm` elegido en validación y ningún precio en la respuesta pública. [Captura del despliegue](evidencia/dashboard_render.png).
-
-### Datos reales en el despliegue
-
-`->` El informe sale de dos momentos, con la misma cadena de [`build.py`](dsia_web/build.py):
-
-1. **Arranque del contenedor** ([`serve.py`](dsia_web/serve.py), el `CMD` de la imagen). Si hay credenciales en tiempo de ejecución (variables `ALPACA_PAPER_API_KEY_ID` y `ALPACA_PAPER_API_SECRET_KEY` del servicio, o `/etc/secrets/alpaca.env`) y el informe del build es la demo o es de otro día, descarga, reentrena y sirve el informe nuevo antes de lanzar Uvicorn. Si falla, sirve el del build. Como el plan free duerme el servicio sin tráfico, cada arranque publica datos hasta el día anterior; con 0,1 CPU y 512 MB el refresco tarda unos 40 s, que se suman al arranque en frío.
-2. **Build de la imagen** (`python -m dsia_web.build auto`). Con el secret file `alpaca.env`, que BuildKit monta solo durante ese `RUN` con el id `alpaca_env`, el informe real ya queda en la imagen y el arranque del mismo día no repite el refresco. Sin él (CI, local, o claves solo como variables de entorno, que Render pasa al build como *build args* y por eso no se leen allí) genera la demo sintética.
-
-En ambos casos, **con credenciales** [`alpaca_source.py`](dsia_web/alpaca_source.py) descarga con `alpaca-py` las barras diarias ajustadas por split de AAPL, AMZN, GOOGL, JNJ, JPM, META, MSFT, NVDA, TSLA y XOM desde 2018 hasta el día anterior (feed SIP, con reintento en IEX si la suscripción no lo permite), conserva las fechas comunes a todos los símbolos y escribe solo `date, symbol, close, volume`. Después reentrena el modelo del II (preparar → entrenar → un toque del holdout → inferir) y publica el snapshot con `data_kind: alpaca`. El journal registra `download_bars` con agregados (filas, símbolos, fechas, rango y feed).
-- **Sin credenciales** (CI y local): demo sintética reproducible.
-- **Si la descarga falla:** en el build, termina con `No se pudieron descargar las barras de Alpaca (<tipo>)` y Render conserva el despliegue anterior; al arrancar, se registra el aviso y se sirve el informe del build.
-
-`~>` **Licencia.** Alpaca [no permite redistribuir sus datos](https://alpaca.markets/support/redistribute-alpaca-api). Por eso el informe público con datos reales no incluye `input_summary` (cierres, retorno realizado ni volatilidad): solo símbolos, retornos predichos por el modelo y métricas de evaluación. El CSV descargado se borra al terminar el `RUN` y las claves no quedan en ninguna capa de la imagen ni en los logs.
-
-`>>` **Configurar en Render:** basta con las variables de entorno `ALPACA_PAPER_API_KEY_ID` y `ALPACA_PAPER_API_SECRET_KEY` (las claves de paper trading dan acceso a datos de mercado); es la configuración del despliegue actual. Opcionalmente, el secret file `alpaca.env` con esas dos líneas hornea el informe en el build y acorta el arranque. Para forzar datos nuevos: *Manual Deploy → Restart service*. En local: `docker build --secret id=alpaca_env,src=alpaca.env -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .` o `python -m dsia_web.build alpaca --work … --output …` con las variables en el entorno.
-
-- **Modo producción sin contenedor.** Escucha en todas las interfaces y en el puerto que asigne la plataforma: `uvicorn dsia_web.app:app --host 0.0.0.0 --port "$PORT"`. En local usa siempre `--host 127.0.0.1`.
-- **Docker.** El contexto es la raíz del repositorio y [`.dockerignore`](../../.dockerignore) deja fuera `.git`, entornos, `runs`, `data/raw`, `.env*` y el resto de asignaturas. La [imagen](Dockerfile) parte de `python:3.12-slim`, instala sin caché solo las dependencias de ejecución ([`requirements-runtime.txt`](requirements-runtime.txt): las mismas versiones fijadas del II, con `alpaca-py` y sin marimo ni pytest; `tests/test_packaging.py` impide que se desalineen), genera el snapshot durante el build (real o demo, ver arriba), corre con un usuario sin privilegios (uid 10001) y declara un `HEALTHCHECK` contra `/health` hecho con Python.
+- `>` **Docker.** El contexto es la raíz del repositorio y [`.dockerignore`](../../.dockerignore) deja fuera `.git`, entornos, `runs`, `data/raw`, `.env*` y el resto de asignaturas. La imagen instala sin caché [`requirements-runtime.txt`](requirements-runtime.txt) (las versiones fijadas del II más `alpaca-py`, sin marimo ni pytest; `tests/test_packaging.py` impide que se desalineen), genera el snapshot en el build, corre con el uid 10001 y declara un `HEALTHCHECK` contra `/health`.
 
   ```bash
   docker build -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .
@@ -73,13 +185,12 @@ En ambos casos, **con credenciales** [`alpaca_source.py`](dsia_web/alpaca_source
   PYTHON=.venv-ii/bin/python bash proyectos/proyecto_iii/scripts/smoke_test.sh http://127.0.0.1:8790
   ```
 
-- **Render.** [`render.yaml`](../../render.yaml) describe el servicio desplegado: `runtime: docker` con el mismo [Dockerfile](Dockerfile) que el CI (el snapshot se genera en el build), rama `main`, contexto en la raíz, región Frankfurt, plan free, `healthCheckPath: /health` y `AI_PROVIDER=mock`; Render inyecta `$PORT` y el `CMD` escucha en él. `HF_TOKEN` y `DSIA_API_KEY` se introducen en el panel (`sync: false`). Para recrearlo: *New → Blueprint* con este repositorio, o *New → Web Service* con Language `Docker` y Dockerfile Path `./proyectos/proyecto_iii/Dockerfile`. [`.python-version`](../../.python-version) fija Python 3.12 para el arranque sin contenedor.
-- **Procfile.** [`Procfile`](../../Procfile) arranca sin contenedor en un runner que ya tenga instalado `proyectos/proyecto_ii/requirements.txt`: genera el snapshot demo si falta y lanza Uvicorn en `$PORT`. En Heroku no basta con el buildpack de Python, porque instalaría el `requirements.txt` raíz (solo el Proyecto I); allí usa el contenedor (`heroku stack:set container` con el mismo [Dockerfile](Dockerfile)), como en Render.
-- **Clave opcional.** Con `DSIA_API_KEY` definida, `POST /api/v1/analyze` exige `X-API-Key`. El resto de endpoints son de lectura.
+- `>` **Render.** [`render.yaml`](../../render.yaml) describe el servicio desplegado (`runtime: docker`, rama `main`, Frankfurt, plan free, `healthCheckPath: /health`). `HF_TOKEN`, `DSIA_API_KEY` y las claves `ALPACA_*` se introducen en el panel (`sync: false`). Para recrearlo: *New → Blueprint* con este repositorio, o *New → Web Service* con Language `Docker` y Dockerfile Path `./proyectos/proyecto_iii/Dockerfile`. Para forzar datos nuevos: *Manual Deploy → Restart service*. Con el secret file: `docker build --secret id=alpaca_env,src=alpaca.env -f proyectos/proyecto_iii/Dockerfile -t dsia-iii .`
+- `>` **Procfile.** [`Procfile`](../../Procfile) arranca sin contenedor en un runner con `proyectos/proyecto_ii/requirements.txt` instalado: genera la demo si falta y lanza Uvicorn en `$PORT`. [`.python-version`](../../.python-version) fija Python 3.12. En Heroku el buildpack de Python instalaría el `requirements.txt` raíz (solo el I), así que allí se usa el contenedor.
 
 ## Informe con el histórico del Proyecto II
 
-Sigue la [receta de entrenamiento e inferencia del II](../proyecto_ii/README.md#reproducir-el-histórico-autorizado). Usa el mismo CSV y el directorio que contiene `model.joblib` y `test_metrics.json` de una ejecución propia. Define `DSIA_BARS_CSV` y `DSIA_FROZEN_RUN` en el entorno local. Con el `PYTHONPATH` anterior:
+`->` Reproducir el run congelado del II con el CSV de Alpaca del Proyecto I, sin reentrenar. Sigue la [receta del II](../proyecto_ii/README.md#reproducir-el-histórico-autorizado) y define `DSIA_BARS_CSV` y `DSIA_FROZEN_RUN` (el directorio con `model.joblib` y `test_metrics.json`) en el entorno local:
 
 ```bash
 history_dir=$(mktemp -d)
@@ -89,44 +200,69 @@ history_dir=$(mktemp -d)
 export DSIA_SNAPSHOT="$history_dir/snapshot.json"
 ```
 
-Arranca Uvicorn con esa ruta. El generador comprueba el hash de los datos y reutiliza las métricas guardadas. La demo pública utiliza el snapshot sintético. Las barras, artefactos e informes del proveedor se manejan en local.
-
-### Evidencia con datos reales sin redistribuirlos
-
-La licencia de Alpaca no permite publicar las barras, así que se versiona solo un resumen agregado: [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json). Procede de `from-run` sobre el CSV del Proyecto I (`input_sha256` `2ebbd7d7…ce4b`, el mismo que registra `preparation.json` del run `alpaca-20261112`) con `--provider mock`, el 23/11/2026:
+`>>` El generador comprueba el hash de los datos y reutiliza las métricas guardadas. Como la licencia de Alpaca no permite publicar las barras, se versiona solo un resumen agregado: [`evidencia/historico_alpaca.json`](evidencia/historico_alpaca.json), generado el 23/11/2026 con `--provider mock` sobre el CSV del I (`input_sha256` `2ebbd7d7…ce4b`, el mismo que registra el run `alpaca-20261112` del II):
 
 | Campo | Valor |
 | --- | --- |
 | `run_id` | `b2553cbc…6169211` |
-| Datos | `alpaca`, 10 símbolos (AAPL, AMZN, GOOGL, JNJ, JPM, META, MSFT, NVDA, TSLA, XOM), 21 960 filas, `as_of` 2026-09-28 |
-| Modelo | `swarm`; RMSE validación 0,0927 frente a 0,0937 de Dummy |
+| Datos | `alpaca`, 10 símbolos, 21 960 filas, `as_of` 2026-09-28 |
+| Modelo | `swarm`; RMSE de validation 0,0927 frente a 0,0937 de Dummy |
 | Holdout (un toque) | RMSE 0,0919 · MAE 0,0705 · R² −0,0059 · acierto de signo 0,589 |
 | Journal | `validate_input` 32,7 ms → `infer_snapshot` 132,4 ms → `publish_snapshot` 0,7 ms |
 
-`run_id` incluye `generated_at`, así que cambia en cada ejecución aunque los datos y el modelo sean los mismos; para comparar una regeneración usa `input_sha256`, `artifact_sha256`, `validation`, `holdout` y `splits`, que sí se reproducen. El archivo no contiene precios, predicciones por símbolo, `input_summary` ni el texto de la explicación. Se regenera con `python -m dsia_web.evidence --snapshot <snapshot> --journal <pipeline.jsonl> --output <nuevo.json>`. En local, el mismo snapshot pasa `smoke_test.sh` y `browser_smoke.py --kind "Datos reales · Alpaca" --expect-pipeline`.
+`~>` `run_id` incluye `generated_at` y cambia en cada ejecución; para comparar una regeneración se usan `input_sha256`, `artifact_sha256`, `validation`, `holdout` y `splits`. El archivo no contiene precios, predicciones por símbolo ni el texto de la explicación. Se regenera con `python -m dsia_web.evidence --snapshot <snapshot> --journal <pipeline.jsonl> --output <nuevo.json>`.
 
-## Operación y verificación
+## Pruebas y CI
 
-- `--journal` escribe un JSONL por ejecución. Cada etapa tiene un inicio y un resultado con tiempo transcurrido. Un fallo incluye su tipo. El evento de publicación registra el `run_id`. En `from-run`, la etapa `validate_input` valida el CSV con el contrato del II y registra solo agregados (`rows`, `symbols`, `input_sha256`) antes de `infer_snapshot`. Usa un archivo nuevo fuera de `--work` para conservar la evidencia.
-- `/health` confirma que el proceso tiene en memoria un snapshot válido. El timestamp del journal mide cuándo corrió el lote y `as_of` indica el cierre de los datos. Cada valor responde a una pregunta distinta durante la demo.
-- Para un servicio gestionado, configura [`.env.example`](.env.example) en las variables del entorno y apunta a un snapshot persistente. API y dashboard comparten proceso; el empaquetado está en [Empaquetado y despliegue](#empaquetado-y-despliegue).
-- Cada petición HTTP deja una línea INFO con `request_id` y `latency_ms`, y responde con `X-Request-ID` y cabeceras de seguridad (detalle en el [contrato](API.md)).
-- Suite desde la raíz, con cobertura:
+`>` Suite del III desde la raíz, con cobertura:
 
-  ```bash
-  AI_PROVIDER=mock HF_TOKEN= MPLBACKEND=Agg PYTHONPATH=proyectos/proyecto_ii:proyectos/proyecto_iii \
-    .venv-ii/bin/python -m pytest -q --cov=dsia_web --cov-report=term-missing proyectos/proyecto_iii/tests
-  ```
+```bash
+AI_PROVIDER=mock HF_TOKEN= MPLBACKEND=Agg PYTHONPATH=proyectos/proyecto_ii:proyectos/proyecto_iii \
+  .venv-ii/bin/python -m pytest -q --cov=dsia_web --cov-report=term-missing --cov-fail-under=90 proyectos/proyecto_iii/tests
+```
 
-## Guion de 5–7 minutos
+`>>` Las pruebas cubren el resumen de entrada del snapshot y su compatibilidad (`test_snapshot.py`), la IA del lote y `from-run` con sus fallos (`test_build.py`), la descarga simulada de Alpaca (`test_alpaca.py`), el refresco al arrancar (`test_serve.py`), la API (`test_api.py`, `test_analyze.py`, `test_pipeline.py`), el middleware (`test_observability.py`), el dashboard servido y el journal del lote (`test_web.py`), la evidencia agregada (`test_evidence.py`) y la imagen (`test_packaging.py`). No usan red ni claves.
+
+`>>` [Workflow](../../.github/workflows/ci.yml) en `push` a `main`, `pull_request` y manual. El job `proyectos-ii-y-iii` ejecuta el pytest del III con umbral del 90 %, el lote demo, el smoke HTTP y Playwright, y publica el artefacto; `proyecto-iii-docker` construye la imagen, espera al `HEALTHCHECK` y pasa el smoke contra el contenedor.
+
+`=>` Run verde [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693) de `main` (commit `bd3b0fa`, 24/11/2026): **123 tests y 97,22 % de cobertura** de `dsia_web`, smoke y Playwright correctos contra Uvicorn, y smoke correcto contra el contenedor. La verificación local del 24/11/2026 con `.venv-ii` da los mismos 123 tests en verde (97 %).
+
+## Operación
+
+- `>` `/health` confirma que el proceso tiene en memoria un snapshot válido y devuelve `checks` (`data_kind`, `as_of`, antigüedad en días y disponibilidad del journal); sin snapshot responde 503.
+- `>` `as_of` es la fecha del último dato y el timestamp del journal, la hora a la que corrió el lote: responden a preguntas distintas durante la demo.
+- `>` Cada petición deja una línea INFO con `request_id` y `latency_ms` y responde con `X-Request-ID`, CSP `default-src 'self'`, `nosniff` y `no-referrer`.
+- `>` `GET /api/v1/pipeline` solo expone campos agregados del journal (etapa, estado, duración, `run_id`, filas, símbolos y hash), nunca rutas.
+
+## Guion de la exposición
+
+`->` Exposición de 5–7 minutos con la demo sobre **[https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com)**. Abrir la URL unos minutos antes para que el plan gratuito despierte la instancia (unos 50 s más el refresco de Alpaca).
 
 | Tiempo | Qué mostrar |
 | --- | --- |
-| 1 min | Problema, fuente y horizonte de 21 sesiones. Carácter sintético de la demo y evidencia agregada del histórico Alpaca |
-| 1 min | Diagrama con entrenamiento, artefacto e inferencia por lotes |
-| 1 min | Panel **Operación**: estado 200, `run_id`, antigüedad, contadores y eventos del lote. Confirmar que el `run_id` coincide con `/health` y con el journal |
-| 1,5 min | Ranking, filtro, tabla **Datos de entrada** y la respuesta HTTP en la red del navegador |
-| 1 min | **Explicar símbolo**: `POST /api/v1/analyze` con `request_id` y latencia; explicar el 503 tipado si falla el proveedor |
-| 1 min | Dummy frente a Ridge y Swarm en validación, holdout de un toque y R² negativo. Cerrar con CI, Docker y el rollback |
+| 0:00–1:00 | Problema y usuario: ranking de retorno a 21 sesiones de diez acciones. Fuente Alpaca, etiqueta «Datos reales · Alpaca» y por qué solo se publican predicciones (licencia) |
+| 1:00–2:00 | [Diagrama](../../docs/ARQUITECTURA_DSIA.md#proyecto-iii--lote-y-servicio-http): Ingesta → Procesamiento → Modelo / IA → API → Dashboard → Despliegue, y por qué por lotes |
+| 2:00–3:00 | Panel **Operación** en Render: estado 200, `run_id`, último dato 2026-11-20, contadores y eventos del lote con `download_bars`. Abrir [`/health`](https://dsia-swarmtrader.onrender.com/health) en otra pestaña y comparar el `run_id` |
+| 3:00–4:30 | Ranking y filtro; en la pestaña Red del navegador, la respuesta de `/api/v1/snapshot`. **Explicar símbolo**: `POST /api/v1/analyze` con `request_id` y latencia, y el 503 tipado si cae el proveedor |
+| 4:30–5:30 | Evidencia del modelo: Dummy frente a Ridge y Swarm en validation, holdout de un toque y R² casi nulo, explicado como límite del resultado |
+| 5:30–6:30 | CI del run 45288524693 (123 tests, Playwright, Docker), `Dockerfile` con `HEALTHCHECK`, rollback y [registro de IA](AI_USAGE.md) para las preguntas |
 
-[Release Candidate](RELEASE.md) · [Rúbricas y trazabilidad](../../docs/TRAZABILIDAD_DSIA.md) · [Contrato HTTP](API.md) · [Citación de IA](AI_USAGE.md) · [Enunciado del profesor](https://github.com/dmartincc/dsia-26-27/blob/b76b9508acd7ecdf41da9890d35dfdefaa20847f/proyectos/proyecto_iii/README.md)
+`~>` **Contingencia.** Si Render no responde, arrancar la demo local de [Arranque local de API y dashboard](#arranque-local-de-api-y-dashboard), pasar `smoke_test.sh` y enseñar la [captura del despliegue](evidencia/dashboard_render.png) y el artefacto del CI como referencia visual.
+
+## Uso de IA
+
+`>>` [AI_USAGE.md](AI_USAGE.md): OpenAI Codex (modelo gpt-6.2-sol) en la integración del 23/11/2026 y Claude Code (modelo Claude Opus 5.5) en la auditoría de cumplimiento, el despliegue y los datos reales, con lo aceptado, lo rechazado, la verificación y los commits. El proveedor `mock` produce la explicación de la demo sin llamar a un modelo externo; a él solo viajan agregados, nunca precios ni claves.
+
+## Desarrollo por fechas
+
+- `->` **11 noviembre:** se crea el repositorio de investigación [`dalonsogomez-ai/swarmtrader`](https://github.com/dalonsogomez-ai/swarmtrader); el código que reutiliza el II es su v1.4.0 (commit `5642dda`, ver [UPSTREAM.json](../proyecto_ii/UPSTREAM.json)).
+- `~>` **12 noviembre:** el Proyecto II se escribe con OpenAI Codex (gpt-6.1-sol): contrato temporal, gates y adaptación del código. Es el núcleo que amplía el III.
+- `>>` **19 noviembre:** auditoría de la extracción de Alpaca con Codex (gpt-6.1-sol).
+- `~>` **23 noviembre:** integración del II y del III en el repositorio de entrega (`e524ec0` y `3d991d2`) con Codex (gpt-6.2-sol): lote, snapshot, API, dashboard y CI.
+- `>` **23 noviembre:** auditoría de cumplimiento con Claude Code (Claude Opus 5.5) y mejoras en commits atómicos: endpoints de predicción, análisis, pipeline y métricas, panel Operación, cabeceras de seguridad, Dockerfile y blueprint de Render.
+- `=>` **23 noviembre:** [PR #1](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/1) fusionado en `main` (`a5a5b9b`), tag [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1) y despliegue en Render.
+- `~>` **23-24 noviembre:** datos reales de Alpaca en Render: descarga en el build ([PR #2](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/2), `bed8312`) y refresco al arrancar ([PR #3](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/3), `033d134`).
+- `=>` **24 noviembre:** `main` en `bd3b0fa` con el run [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693) en verde y el despliegue sirviendo datos hasta el 2026-11-20.
+- `>>` **Octubre:** no hay commits del II ni del III en octubre. El trabajo entró en Git a partir del 23/11/2026 y no se fabrican fechas ni se reescribe el historial.
+
+`>>` [Release Candidate](RELEASE.md) · [Contrato HTTP](API.md) · [Citación de IA](AI_USAGE.md) · [Rúbricas y trazabilidad](../../docs/TRAZABILIDAD_DSIA.md) · [Enunciado del profesor](https://github.com/dmartincc/dsia-26-27/blob/b76b9508acd7ecdf41da9890d35dfdefaa20847f/proyectos/proyecto_iii/README.md)
