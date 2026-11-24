@@ -40,6 +40,13 @@ MAX_BODY_BYTES = 2048
 DEFAULT_EVENTS, MAX_EVENTS = 20, 50
 ASCII_INT = re.compile(r"[0-9]{1,18}")
 COMMIT_HASH = re.compile(r"[0-9a-fA-F]{7,40}")
+# -> Taxonomía del tema 4 (A1): timeout del proveedor => 504, respuesta mala => 502, resto => 503.
+AI_FAILURES = {
+    "timeout": (504, "ai_timeout", "El proveedor de IA no respondió a tiempo. Inténtalo más tarde."),
+    "invalid_response": (502, "ai_bad_response",
+                         "El proveedor de IA devolvió una respuesta no válida. Inténtalo más tarde."),
+}
+AI_UNAVAILABLE = (503, "ai_unavailable", "El proveedor de IA no está disponible. Inténtalo más tarde.")
 KNOWN_PROVIDERS = frozenset({"mock", "hf", "nvidia"})
 
 
@@ -283,14 +290,18 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         if summary is None:
             return error_response(request, 404, "symbol_not_found", "El símbolo no está en el informe cargado.")
         rid = request_id(request.scope)
+        client = None
         try:
             client = ai_client_factory()
             answer = await run_in_threadpool(client.analyze, summary)
         except AIClientError as exc:
+            status, code, message = AI_FAILURES.get(exc.kind, AI_UNAVAILABLE)
             request.app.state.ai_last_call = f"failing:{exc.kind}"
-            LOG.warning("analyze_unavailable request_id=%s error_type=%s", rid, type(exc).__name__)
-            return error_response(request, 503, "ai_unavailable",
-                                  "El proveedor de IA no está disponible. Inténtalo más tarde.")
+            provider = getattr(client, "provider", None) or request.app.state.ai_provider
+            # > Fallo externo => ERROR con request_id, proveedor, kind y latencia; ni el mensaje ni claves.
+            LOG.error("analyze_failed request_id=%s provider=%s kind=%s status=%d code=%s latency_ms=%.2f",
+                      rid, provider, exc.kind, status, code, (perf_counter() - started) * 1000)
+            return error_response(request, status, code, message)
         request.app.state.ai_last_call = "ok"
         latency_ms = round((perf_counter() - started) * 1000, 3)
         LOG.info("analyze request_id=%s symbol=%s provider=%s model=%s latency_ms=%.2f",

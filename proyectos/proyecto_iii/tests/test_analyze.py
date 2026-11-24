@@ -87,6 +87,78 @@ def test_analyze_sends_report_aggregates_and_the_focused_symbol(demo_run):
         assert client.get(f"/api/v1/predictions/{chosen.symbol}").json()["rank"] == sent["focus_rank"]
 
 
+AI_FAILURES = [
+    ("timeout", 504, "ai_timeout", "El proveedor de IA no respondió a tiempo. Inténtalo más tarde."),
+    ("invalid_response", 502, "ai_bad_response",
+     "El proveedor de IA devolvió una respuesta no válida. Inténtalo más tarde."),
+    *[(kind, 503, "ai_unavailable", "El proveedor de IA no está disponible. Inténtalo más tarde.")
+      for kind in ("unavailable", "rate_limited", "auth", "not_found", "config")],
+]
+
+
+@pytest.mark.parametrize(("kind", "status", "code", "message"), AI_FAILURES)
+def test_ai_failure_kind_maps_to_typed_gateway_error_logged_as_error(demo_run, symbol, monkeypatch, caplog,
+                                                                     kind, status, code, message):
+    def failing(self, request):
+        raise AIClientError("Inferencia fallida", kind=kind)
+
+    monkeypatch.setattr(AIClient, "analyze", failing)
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
+        with TestClient(create_app(demo_run.path, api_key="")) as client:
+            response = client.post(URL, json={"symbol": symbol.symbol}, headers={"X-Request-ID": "fallo-ia-01"})
+    assert response.status_code == status
+    assert response.json() == {"error": code, "request_id": "fallo-ia-01",
+                               "detail": {"code": code, "message": message}}
+    # >> Fallo externo => ERROR con request_id, proveedor, kind y latencia (tema 4, A1 y A2); sin el mensaje.
+    errors = [record.getMessage() for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(errors) == 1
+    assert re.fullmatch(rf"analyze_failed request_id=fallo-ia-01 provider=mock kind={kind} status={status} "
+                        rf"code={code} latency_ms=\d+\.\d{{2}}", errors[0])
+
+
+def nvidia_failure(error):
+    """> Error HTTP real del SDK contra integrate.api.nvidia.com, sin red."""
+    import httpx
+    from huggingface_hub.errors import HfHubHTTPError
+    request = httpx.Request("POST", "https://integrate.api.nvidia.com/v1/chat/completions")
+    if isinstance(error, int):
+        return HfHubHTTPError(f"{error} Server Error", response=httpx.Response(error, request=request))
+    return httpx.ConnectError("conexión rechazada", request=request)
+
+
+@pytest.mark.parametrize(("answer", "status", "code"), [
+    ("timeout", 504, "ai_timeout"),
+    # >> R4: la cola de NVIDIA agotada llega como 504 del proveedor => también es un timeout.
+    (nvidia_failure(504), 504, "ai_timeout"),
+    # >> R10: una conexión rechazada no es un timeout; el proveedor no está disponible.
+    (nvidia_failure("connect"), 503, "ai_unavailable"),
+    (SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=None, reasoning_content="..."))]),
+     502, "ai_bad_response"),
+])
+def test_real_nvidia_path_maps_timeout_to_504_and_reasoning_only_to_502(demo_run, symbol, monkeypatch,
+                                                                        answer, status, code):
+    from huggingface_hub.errors import InferenceTimeoutError
+
+    class FakeNvidia:
+        def __init__(self, **kwargs):
+            pass
+
+        def chat_completion(self, **kwargs):
+            if answer == "timeout":
+                raise InferenceTimeoutError("lento")
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    monkeypatch.setenv("NVIDIA_API_KEY", NVIDIA_KEY)
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", FakeNvidia)
+    factory = lambda: AIClient("nvidia", sleep=lambda seconds: None)  # noqa: E731 - sin esperas reales
+    with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=factory)) as client:
+        response = client.post(URL, json={"symbol": symbol.symbol})
+    assert (response.status_code, response.json()["error"]) == (status, code)
+    assert NVIDIA_KEY not in response.text
+
+
 @pytest.mark.parametrize(("kwargs", "status", "code"), [
     ({"content": b"{no es json", "headers": {"Content-Type": "application/json"}}, 400, "invalid_json"),
     ({"json": ["AAPL"]}, 400, "invalid_json"),
@@ -154,21 +226,6 @@ def test_analyze_unknown_symbol_is_404_and_without_snapshot_is_503(demo_run, tmp
         unavailable = client.post(URL, json={"symbol": "ZZZZ"})
     assert (unavailable.status_code, unavailable.json()["error"]) == (503, "snapshot_unavailable")
     assert set(unavailable.json()) == {"error", "detail", "request_id"}
-
-
-def test_ai_client_error_becomes_typed_503(demo_run, symbol, monkeypatch, caplog):
-    def failing(self, request):
-        raise AIClientError("Inferencia HF fallida")
-
-    monkeypatch.setattr(AIClient, "analyze", failing)
-    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
-        with TestClient(create_app(demo_run.path, api_key="")) as client:
-            response = client.post(URL, json={"symbol": symbol.symbol}, headers={"X-Request-ID": "fallo-ia-01"})
-    assert response.status_code == 503
-    assert response.json() == {"error": "ai_unavailable", "request_id": "fallo-ia-01", "detail": {
-        "code": "ai_unavailable", "message": "El proveedor de IA no está disponible. Inténtalo más tarde."}}
-    assert any("analyze_unavailable request_id=fallo-ia-01 error_type=AIClientError" in record.getMessage()
-               for record in caplog.records)
 
 
 def test_invalid_ai_configuration_is_also_503(demo_run, symbol, monkeypatch):

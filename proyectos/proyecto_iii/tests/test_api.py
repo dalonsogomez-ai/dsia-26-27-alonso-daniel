@@ -5,6 +5,8 @@ from starlette.testclient import TestClient
 
 import logging
 
+from swarmtrade_app.ai_client import AIClient, AIClientError
+
 from dsia_web.app import create_app
 
 # >> R7: esta tanda es la RC2; el tag v0.9.0-rc2 lo crea el autor tras el CI en verde.
@@ -40,6 +42,31 @@ def test_health_unavailable_is_503_with_typed_checks(tmp_path):
         "snapshot_loaded": False, "data_kind": None, "as_of": None, "snapshot_age_days": None,
         "journal_available": False, **AI_OK}}
     assert str(tmp_path) not in response.text
+
+
+def test_health_is_degraded_after_a_failed_provider_call_and_ready_after_a_good_one(demo_run, monkeypatch):
+    # >> R9 (tema 4, A3 opción A): el proveedor en fallo deja el servicio en 200 «degraded», no en 503.
+    outcome = {"kind": "timeout"}
+    original = AIClient.analyze
+
+    def flaky(self, request):
+        if outcome["kind"]:
+            raise AIClientError("Inferencia fallida", kind=outcome["kind"])
+        return original(self, request)
+
+    monkeypatch.setattr(AIClient, "analyze", flaky)
+    symbol = demo_run.snapshot.predictions[0].symbol
+    with TestClient(create_app(demo_run.path, api_key="")) as client:
+        assert client.post("/api/v1/analyze", json={"symbol": symbol}).status_code == 504
+        failing = client.get("/health")
+        outcome["kind"] = None
+        assert client.post("/api/v1/analyze", json={"symbol": symbol}).status_code == 200
+        recovered = client.get("/health")
+    assert failing.status_code == 200
+    assert (failing.json()["status"], failing.json()["checks"]["ai_last_call"]) == ("degraded", "failing:timeout")
+    assert failing.json()["run_id"] == demo_run.snapshot.run_id
+    assert recovered.status_code == 200
+    assert (recovered.json()["status"], recovered.json()["checks"]["ai_last_call"]) == ("ready", "ok")
 
 
 @pytest.mark.parametrize("env,provider,logged", [
@@ -78,6 +105,22 @@ def test_blank_ai_provider_is_mock_in_health_like_in_the_client(demo_run, monkey
     assert health["status"] == "ready"
     assert {name: health["checks"][name] for name in AI_OK} == AI_OK
     assert (answer.status_code, answer.json()["provider"]) == (200, "mock")
+
+
+def test_a_key_pasted_into_ai_provider_is_neither_published_nor_logged(demo_run, monkeypatch, caplog):
+    # >> /health es público: si alguien pega la clave en el campo AI_PROVIDER del panel, no se expone.
+    pasted = "clave.pegada.por.error." + "Z" * 40
+    monkeypatch.setenv("AI_PROVIDER", pasted)
+    with caplog.at_level(logging.DEBUG):
+        with TestClient(create_app(demo_run.path, api_key="")) as client:
+            health = client.get("/health")
+            failed = client.post("/api/v1/analyze", json={"symbol": demo_run.snapshot.predictions[0].symbol})
+    assert (health.json()["status"], health.json()["checks"]["ai_provider"]) == ("degraded", "invalid")
+    assert failed.status_code == 503
+    for text in (health.text, failed.text, caplog.text):
+        assert pasted.lower()[:20] not in text.lower()
+    assert "config_invalid ai_provider=<no válido, 63 caracteres>" in caplog.text
+    assert "analyze_failed request_id=" in caplog.text and " provider=invalid " in caplog.text
 
 
 def test_ai_configuration_with_its_key_is_ok_and_the_key_never_leaks(demo_run, monkeypatch, caplog):
