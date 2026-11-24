@@ -1,7 +1,7 @@
 # Release Candidate del Proyecto III
 
 - `->` Versión de la entrega **RC1 · 23 de noviembre de 2026**, fecha de Release Candidate del enunciado, etiquetada como **`v0.9.0-rc1`**.
-- `~>` **RC2 · `0.9.0-rc2`** (24 de noviembre de 2026): arreglos de la auditoría y de su revisión adversarial sobre `e433fae`, verificados en local ([v0.9.0-rc2](#v090-rc2)). La despliega y la etiqueta el lead con la aprobación del autor; qué versión sirve Render se lee en `/health` ([Versión desplegada](#versión-desplegada)).
+- `~>` **RC2 · `0.9.0-rc2`** (24 de noviembre de 2026): arreglos de la auditoría y de su revisión adversarial sobre `e433fae`, verificados en local ([v0.9.0-rc2](#v090-rc2)). Desplegada el 24/11/2026 desde `1ff1817` (CI [45407490182](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45407490182) en verde); el tag `v0.9.0-rc2` sigue pendiente; qué versión sirve Render se lee en `/health` ([Versión desplegada](#versión-desplegada)).
 - `>>` Contrato del snapshot **1**, con el campo opcional `input_summary` compatible hacia atrás. Cada commit se verifica en [GitHub Actions en main](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/workflows/ci.yml?query=branch%3Amain).
 - `>>` Arranque, despliegue y guion de la exposición en el [README](README.md#arranque-local-de-api-y-dashboard).
 
@@ -31,7 +31,7 @@
 | Proveedor alternativo `nvidia` y elección de `nvidia/nemotron-3.5-super-vl-120b-a12b` tras medir cinco modelos en Render | `a86b9de`, `edb049c` | Pruebas con un `InferenceClient` falso, sin red; 3 llamadas reales por modelo (NVDA, AAPL, XOM) contra `/api/v1/analyze` en Render |
 | Smoke y Playwright adaptados a un LLM real (texto distinto en cada llamada, `ANALYZE_TIMEOUT` de 200 s) y captura del 24/11 | `e433fae` | Run [45306204500](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45306204500) en verde; [captura](evidencia/dashboard_render.png) con el análisis de Nemotron |
 
-`=>` Estado de `main`: [historial del CI](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions?query=branch%3Amain); último run comprobado: [45306204500](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45306204500) (`e433fae`, 24/11/2026), con los tres jobs en verde. El 24/11/2026 el despliegue servía `e433fae` con `as_of` 2026-11-23. El informe público con datos reales solo publica predicciones y métricas, porque Alpaca no permite redistribuir sus datos.
+`=>` Estado de `main`: [historial del CI](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions?query=branch%3Amain); último run comprobado: [45407490182](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45407490182) (`1ff1817`, 24/11/2026), con los tres jobs en verde. El 24/11/2026 el despliegue sirvió `e433fae` hasta el push de `1ff1817`, que Render sirve con `0.9.0-rc2` y `as_of` 2026-11-23. El informe público con datos reales solo publica predicciones y métricas, porque Alpaca no permite redistribuir sus datos.
 
 ## v0.9.0-rc2
 
@@ -65,7 +65,9 @@
 
 `>` Desde `v0.9.0-rc2`, `curl -s https://dsia-swarmtrader.onrender.com/health` devuelve `version` (`0.9.0-rc2`) y `commit` (los 7 primeros caracteres de `RENDER_GIT_COMMIT`, el commit que Render construyó). Los mismos campos salen en `/api/v1/metrics` y en la tarjeta «Estado» del panel Operación. Fuera de Render, `commit` vale `DSIA_COMMIT` o `local`, e `invalid` si la variable no es un hash hexadecimal de 7 a 40 caracteres.
 
-`>>` Si `/health` no trae `version`, Render sirve una versión anterior a la RC2 (el 24/11/2026, `e433fae`). Para saber qué hay en producción, se compara `commit` con `git log --oneline -1` de `main` en GitHub y con la pestaña *Deploys* de Render.
+`>>` Si `/health` no trae `version`, Render sirve una versión anterior a la RC2 (hasta el 24/11/2026, `e433fae`). Para saber qué hay en producción, se compara `commit` con `git log --oneline -1` de `main` en GitHub y con la pestaña *Deploys* de Render.
+
+`>>` Comprobado el 24/11/2026 tras el push de `1ff1817`, solo con lecturas (GET y lectura del DOM, sin lanzar análisis): `/health` → `200 ready` con `version` `0.9.0-rc2`, `commit` `1ff1817`, `data_kind: alpaca`, `as_of` 2026-11-23 y `ai_provider: nvidia`; el panel Operación muestra «v0.9.0-rc2 · commit 1ff1817», los 14 eventos de `/api/v1/pipeline` en la tabla y el grafo del lote con los 7 pasos en `succeeded` y Servir API en `serving` (`last_run_id` igual al `run_id` de `/health`), sin errores de consola. No se ejecutó `browser_smoke.py` contra Render porque lanza análisis reales con la clave de NVIDIA.
 
 ## Issues conocidos
 

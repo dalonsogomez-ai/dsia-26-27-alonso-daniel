@@ -50,6 +50,6 @@
 
 ## Verificación de las entregas
 
-`=>` Verificado en local el 24/11/2026 con los comandos del workflow, sobre `v0.9.0-rc2`: I con 178 tests y 99,31 %, II con 197 tests y 86,50 %, III con 298 tests y 98,25 % tras la tercera ronda de verificación, smoke y Playwright contra Uvicorn, y la imagen Docker con el smoke contra el contenedor. El CI de `main` ejecuta los tres jobs y publica el artefacto del III con la captura del dashboard y el journal de la demo; último run comprobado: [45306204500](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45306204500) (`e433fae`, 24/11/2026), en verde.
+`=>` Verificado en local el 24/11/2026 con los comandos del workflow, sobre `v0.9.0-rc2`: I con 178 tests y 99,31 %, II con 197 tests y 86,50 %, III con 298 tests y 98,25 % tras la tercera ronda de verificación, smoke y Playwright contra Uvicorn, y la imagen Docker con el smoke contra el contenedor. El CI de `main` ejecuta los tres jobs y publica el artefacto del III con la captura del dashboard y el journal de la demo; último run comprobado: [45407490182](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45407490182) (`1ff1817`, 24/11/2026), en verde.
 
 `>>` [Matriz de trazabilidad](../docs/TRAZABILIDAD_DSIA.md) · [Workflow](../.github/workflows/ci.yml) · [Historial del CI de `main`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions?query=branch%3Amain) · [Repositorio de entrega](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel)
