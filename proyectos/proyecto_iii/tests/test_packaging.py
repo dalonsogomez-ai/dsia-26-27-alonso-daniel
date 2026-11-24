@@ -1,7 +1,11 @@
 """>> El runtime de la imagen usa exactamente las versiones fijadas del II."""
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;]+)", re.MULTILINE)
@@ -42,3 +46,21 @@ def test_container_starts_through_the_refreshing_entrypoint():
     dockerfile = (ROOT / "proyectos/proyecto_iii/Dockerfile").read_text()
     assert dockerfile.rstrip().endswith('CMD ["python", "-m", "dsia_web.serve"]')
     assert "--start-period=120s" in dockerfile
+
+
+def test_alpaca_secret_file_is_ignored_by_git_and_kept_out_of_the_image():
+    # >> README y Dockerfile piden crear alpaca.env para `docker build --secret`: nunca debe versionarse
+    #    ni copiarse en la imagen, esté en la raíz o dentro de un proyecto (03_despliegue A2 y B1).
+    dockerignore = (ROOT / ".dockerignore").read_text().split()
+    assert {"**/alpaca.env", "**/*.env"} <= set(dockerignore)
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git no está disponible")
+    paths = ["alpaca.env", "proyectos/proyecto_iii/alpaca.env", "proyectos/proyecto_ii/otra-clave.env"]
+    result = subprocess.run([git, "check-ignore", "--no-index", *paths], cwd=ROOT, capture_output=True, text=True)
+    if result.returncode == 128:
+        pytest.skip("no es un repositorio git")
+    assert result.stdout.split() == paths
+    kept = subprocess.run([git, "check-ignore", "--no-index", "proyectos/proyecto_iii/.env.example"], cwd=ROOT,
+                          capture_output=True, text=True)
+    assert kept.returncode == 1  # > La plantilla sí se versiona.

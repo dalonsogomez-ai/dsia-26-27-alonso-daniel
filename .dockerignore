@@ -18,6 +18,9 @@ alpaca.env
 .env.*
 **/.env
 **/.env.*
+# > El secret file de Alpaca (u otro *.env) dentro de un proyecto tampoco entra en la imagen.
+**/alpaca.env
+**/*.env
 docs
 1_programacion_avanzada_python
 2_pruebas_y_despliegue

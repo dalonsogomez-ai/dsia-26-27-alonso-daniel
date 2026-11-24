@@ -106,9 +106,10 @@ def test_invalid_ai_configuration_is_also_503(demo_run, symbol, monkeypatch):
 
 
 def test_hf_token_never_reaches_response_or_logs(demo_run, symbol, monkeypatch, caplog):
-    token = "hf_supersecreto_0123456789"
+    # > Valor falso sin forma de clave real: el git grep de secretos del curso sale vacío.
+    credencial_falsa = "clave.falsa.hf.0123456789"
     monkeypatch.setenv("AI_PROVIDER", "hf")
-    monkeypatch.setenv("HF_TOKEN", token)
+    monkeypatch.setenv("HF_TOKEN", credencial_falsa)
 
     class LeakyClient:
         def __init__(self, **kwargs):
@@ -119,11 +120,11 @@ def test_hf_token_never_reaches_response_or_logs(demo_run, symbol, monkeypatch, 
         with TestClient(create_app(demo_run.path, api_key="")) as client:
             response = client.post(URL, json={"symbol": symbol.symbol})
     assert response.status_code == 503
-    assert token not in response.text
-    assert all(token not in record.getMessage() for record in caplog.records)
+    assert credencial_falsa not in response.text
+    assert all(credencial_falsa not in record.getMessage() for record in caplog.records)
 
 
-NVIDIA_KEY = "nvapi-supersecreta-0123456789"
+NVIDIA_KEY = "clave.falsa.nvidia.0123456789"
 
 
 def test_analyze_with_nvidia_provider_returns_provider_nvidia(demo_run, symbol, monkeypatch):

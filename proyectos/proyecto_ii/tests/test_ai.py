@@ -400,7 +400,7 @@ def test_cli_reports_data_failure(tmp_path):
 
 # --- N: proveedor NVIDIA (build.nvidia.com, API compatible con OpenAI) ---------------------------
 
-NVIDIA_KEY = 'nvapi-clave-de-prueba-no-real'
+NVIDIA_KEY = 'clave.falsa.nvidia.de.prueba'  # > sin forma de clave real: git grep de secretos vacío
 
 
 def chat_answer(content, **message):
@@ -653,7 +653,7 @@ def test_cli_model_flag_validates_against_nvidia_variable(tmp_path, caplog):
 
 def test_subprocess_environment_drops_nvidia_variables(monkeypatch, offline_env):
     monkeypatch.setenv('AI_PROVIDER', 'nvidia')
-    monkeypatch.setenv('NVIDIA_API_KEY', 'nvapi-no-debe-viajar')
+    monkeypatch.setenv('NVIDIA_API_KEY', 'clave.falsa.nvidia.no.debe.viajar')
     env = offline_env()
     assert env['AI_PROVIDER'] == 'mock'
     assert not [name for name in env if name.startswith('NVIDIA_')]
