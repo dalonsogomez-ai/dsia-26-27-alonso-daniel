@@ -7,6 +7,8 @@ from urllib.parse import urljoin
 
 from playwright.sync_api import expect, sync_playwright
 
+ANALYZE_TIMEOUT_MS = 200_000
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -69,7 +71,8 @@ def main() -> None:
         page.get_by_role("combobox", name="Símbolo").select_option(symbol)
         if args.api_key:
             page.locator("#analyze-key").fill(args.api_key)
-        with page.expect_response(lambda r: r.url.endswith("/api/v1/analyze")) as analyzed:
+        # > Con un LLM real el análisis tarda decenas de segundos; con mock, milisegundos.
+        with page.expect_response(lambda r: r.url.endswith("/api/v1/analyze"), timeout=ANALYZE_TIMEOUT_MS) as analyzed:
             page.get_by_role("button", name="Explicar símbolo").click()
         answer = analyzed.value
         assert answer.ok, answer.status
@@ -87,8 +90,11 @@ def main() -> None:
         expect(page.locator("#analyze-result")).to_be_hidden()
         page.unroute("**/api/v1/analyze")
         # Se repite contra el backend real para que la captura muestre el análisis correcto.
-        page.get_by_role("button", name="Explicar símbolo").click()
-        expect(page.locator("#analyze-summary")).to_have_text(result["summary"])
+        # > Un LLM real no repite el texto exacto: se compara con la respuesta de esta segunda llamada.
+        with page.expect_response(lambda r: r.url.endswith("/api/v1/analyze"), timeout=ANALYZE_TIMEOUT_MS) as again:
+            page.get_by_role("button", name="Explicar símbolo").click()
+        assert again.value.ok, again.value.status
+        expect(page.locator("#analyze-summary")).to_have_text(again.value.json()["summary"])
         expect(page.locator("#analyze-error")).to_be_hidden()
 
         page.get_by_role("searchbox", name="Filtrar símbolo").fill(symbol)

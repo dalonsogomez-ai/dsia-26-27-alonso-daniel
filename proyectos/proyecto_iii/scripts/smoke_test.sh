@@ -16,7 +16,8 @@ symbol=$("${PYTHON:-python3}" -c 'import json,sys; print(json.load(open(sys.argv
 fetch "$base/api/v1/predictions/$symbol" > "$tmp_dir/prediction.json"
 analyze_headers=(-H "Content-Type: application/json" -H "X-Request-ID: smoke-analyze-0001")
 if [[ -n "${DSIA_API_KEY:-}" ]]; then analyze_headers+=(-H "X-API-Key: $DSIA_API_KEY"); fi
-fetch -X POST "${analyze_headers[@]}" --data "{\"symbol\": \"$symbol\"}" "$base/api/v1/analyze" > "$tmp_dir/analyze.json"
+# > Con un LLM real (nvidia/hf) el análisis tarda decenas de segundos: curl usa el último --max-time.
+fetch --max-time "${ANALYZE_TIMEOUT:-200}" -X POST "${analyze_headers[@]}" --data "{\"symbol\": \"$symbol\"}" "$base/api/v1/analyze" > "$tmp_dir/analyze.json"
 fetch "$base/api/v1/metrics" > "$tmp_dir/metrics.json"
 "${PYTHON:-python3}" - "$tmp_dir" "$symbol" <<'PY'
 import json
