@@ -147,7 +147,7 @@ def test_analyze_with_nvidia_provider_returns_provider_nvidia(demo_run, symbol, 
     assert response.status_code == 200
     body = response.json()
     assert (body["provider"], body["model"], body["summary"]) == (
-        "nvidia", "moonshotai/kimi-k3.1-pro", "Resumen NVIDIA")
+        "nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b", "Resumen NVIDIA")
     assert seen["config"]["base_url"] == "https://integrate.api.nvidia.com/v1"
     assert seen["request"]["extra_body"] == {"reasoning_effort": "low"}
     assert NVIDIA_KEY not in response.text

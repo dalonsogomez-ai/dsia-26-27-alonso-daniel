@@ -35,7 +35,7 @@ def test_from_run_with_nvidia_publishes_explanation_with_provider_nvidia(demo_ru
     monkeypatch.setattr(AIClient, "analyze", lambda self, request: AIResponse(
         self.provider, "chat_completion", self.model, "Explicación NVIDIA"))
     snapshot = from_run(demo_run.bars, demo_run.run, "nvidia")
-    assert (snapshot.explanation.provider, snapshot.explanation.model) == ("nvidia", "moonshotai/kimi-k3.1-pro")
+    assert (snapshot.explanation.provider, snapshot.explanation.model) == ("nvidia", "nvidia/nemotron-3.5-super-vl-120b-a12b")
 
 
 def test_build_cli_accepts_provider_nvidia(demo_run, tmp_path, monkeypatch):

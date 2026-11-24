@@ -187,9 +187,9 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 | `HF_MAX_TOKENS` | 256 | Entero entre 1 y 512 |
 | `HF_INFERENCE_PROVIDER` | `auto` | `auto` o un identificador en minúsculas con guiones |
 | `NVIDIA_API_KEY` | vacío | Obligatoria con `nvidia`; la CLI la comprueba antes de cargar datos |
-| `NVIDIA_MODEL` | `moonshotai/kimi-k3.1-pro` | Formato `owner/name` (`NVIDIA_MODEL debe tener el formato propietario/nombre`) |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | Formato `owner/name` (`NVIDIA_MODEL debe tener el formato propietario/nombre`) |
 | `NVIDIA_TIMEOUT` | 60 | Número entre 1 y 120 |
-| `NVIDIA_MAX_TOKENS` | 1024 | Entero entre 1 y 4096 |
+| `NVIDIA_MAX_TOKENS` | 4096 | Entero entre 1 y 4096 |
 
 `>` Todas las variables se validan aunque su proveedor no esté activo, de modo que un valor erróneo aparece al arrancar y no al cambiar `AI_PROVIDER`. Con `nvidia`, `--model` sustituye a `NVIDIA_MODEL`; con `hf`, a `HF_MODEL`.
 
@@ -220,12 +220,24 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 | Elemento | Valor |
 | --- | --- |
-| Modelo por defecto | `moonshotai/kimi-k3.1-pro` (`DEFAULT_NVIDIA_MODEL`): 2,8 billones de parámetros, endpoint gratuito, orientado a finanzas y con razonamiento |
-| Alternativas vía `NVIDIA_MODEL` | `mistralai/mistral-large-4-1t-a52b` y `nvidia/nemotron-3-ultra-550b-a55b`, del listado público `https://integrate.api.nvidia.com/v1/models` |
+| Modelo por defecto | `nvidia/nemotron-3.5-super-vl-120b-a12b` (`DEFAULT_NVIDIA_MODEL`): MoE de 120B parámetros (12B activos), endpoint gratuito y con razonamiento; elegido midiendo la tarea real (tabla siguiente) |
+| Otros modelos vía `NVIDIA_MODEL` | Cualquier `propietario/nombre` del listado público `https://integrate.api.nvidia.com/v1/models`, sin cambiar código |
 | Endpoint | `POST https://integrate.api.nvidia.com/v1/chat/completions` (`NVIDIA_BASE_URL`), compatible con OpenAI, cabecera `Authorization: Bearer <NVIDIA_API_KEY>` |
 | Transporte | El mismo `huggingface_hub.InferenceClient` con `base_url`, sin dependencias nuevas: en la versión fijada (1.33.0) una URL añade `/chat/completions`, envía la clave como Bearer y fusiona `extra_body` en el JSON |
-| Parámetros | `reasoning_effort="low"`, `max_tokens` 1024 y timeout de 60 s. Los modelos de razonamiento gastan tokens antes de responder, por eso los valores por defecto superan a los de HF |
+| Parámetros | `reasoning_effort="low"`, `max_tokens` 4096 y timeout de 60 s. Los modelos de razonamiento gastan tokens antes de responder, por eso los valores por defecto superan a los de HF |
 | Qué recibe | Exactamente los mismos agregados y el mismo prompt de sistema que `hf`; nunca precios ni datos crudos |
+
+`>>` **Elección del modelo (24/11/2026).** Se probó cada candidato en el despliegue de Render (`AI_PROVIDER=nvidia`, cambiando solo `NVIDIA_MODEL`) con `POST /api/v1/analyze` para NVDA, AAPL y XOM sobre el snapshot real de Alpaca. Criterios: que responda dentro del timeout, que use solo las cifras recibidas, que distinga error predictivo y rentabilidad, que no sugiera órdenes y la latencia.
+
+| Modelo | Latencia por respuesta | Resultado |
+| --- | --- | --- |
+| `moonshotai/kimi-k3.1-pro` (2,8T) | > 60 s | `ReadTimeout` en los tres intentos |
+| `z-ai/glm-5.3-flash` | > 60 s | `ReadTimeout` en los tres intentos |
+| `mistralai/mistral-large-4-1t-a52b` | 47–55 s (164 s en frío) | Español correcto y cifras exactas, pero llama «rentabilidad esperada» a la media predicha y es demasiado lento para un botón web |
+| `nvidia/nemotron-3-ultra-550b-a55b` | 18–24 s | Inventa detalles no suministrados (p. ej. «media móvil/volatilidad móvil usadas para el escalado»), se contradice sobre la rentabilidad y menciona posiciones *long/short/flat* |
+| **`nvidia/nemotron-3.5-super-vl-120b-a12b`** | **13–22 s** | Cifras exactas, dice expresamente que el RMSE no es rentabilidad y que no hay cifras para inferirla, no sugiere órdenes. Con `max_tokens` 1024 agotaba el presupuesto razonando (`NVIDIA devolvió solo razonamiento`); con 4096 responde siempre |
+
+`=>` Tras la prueba, el prompt de sistema pide además texto plano sin Markdown y un máximo de 150 palabras, porque la web muestra el texto tal cual.
 
 ```bash
 # Completar NVIDIA_API_KEY en .env; no pegarla en comandos ni versionarla.

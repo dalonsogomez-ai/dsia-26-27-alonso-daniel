@@ -18,7 +18,7 @@ LOG = logging.getLogger(__name__)
 
 DEFAULT_HF_MODEL = 'Qwen/Qwen2.5-7B-Instruct'
 # -> NVIDIA (build.nvidia.com): API compatible con OpenAI; alternativa a HF cuando la cuenta HF no tiene saldo.
-DEFAULT_NVIDIA_MODEL = 'moonshotai/kimi-k3.1-pro'
+DEFAULT_NVIDIA_MODEL = 'nvidia/nemotron-3.5-super-vl-120b-a12b'
 NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 NVIDIA_REASONING_EFFORT = 'low'
 # > Reintentos solo para fallos transitorios (429, 5xx, timeouts, conexión): 0,5 s y 1 s con jitter.
@@ -63,7 +63,7 @@ class _Provider:
 # mock comparte los límites de HF para no cambiar el comportamiento previo.
 _PROVIDERS = {'hf': _Provider('huggingface', 'HF_TOKEN', FATAL_STATUS, GENERIC_FAILURE, 30, 256, 512),
               'nvidia': _Provider('nvidia', 'NVIDIA_API_KEY', NVIDIA_FATAL_STATUS, NVIDIA_GENERIC_FAILURE,
-                                  60, 1024, 4096)}
+                                  60, 4096, 4096)}
 
 
 def provider_name(value: str) -> str:
@@ -252,7 +252,9 @@ class AIClient:
                      'Usa solo las cifras suministradas. Distingue error predictivo y rentabilidad. '
                      'La media diaria de las predicciones es casi constante porque los factores son z-scores por '
                      'fecha: interpreta la dispersión, el rango y la mejor señal como el orden relativo entre '
-                     'símbolos. Indica si los datos son sintéticos. No sugieras órdenes ni pesos.'},
+                     'símbolos. Indica si los datos son sintéticos. No sugieras órdenes ni pesos. '
+                     # > La web muestra el texto tal cual: sin Markdown y breve para que se lea de un vistazo.
+                     'Responde en texto plano, sin Markdown, en un máximo de 150 palabras.'},
                     {'role': 'user', 'content': json.dumps(payload, allow_nan=False)}]
         chat = self._chat_nvidia if self.provider == 'nvidia' else self._chat
         where = (f'provider={spec.name}' if self.provider == 'nvidia'

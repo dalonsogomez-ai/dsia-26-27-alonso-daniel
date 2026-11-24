@@ -444,7 +444,7 @@ def test_nvidia_success_uses_openai_compatible_endpoint(request_data, monkeypatc
     caplog.set_level(logging.INFO)
     calls = nvidia_sdk(monkeypatch, [chat_answer('Resumen de Kimi')])
     result = AIClient('nvidia').analyze(request_data)
-    assert DEFAULT_NVIDIA_MODEL == 'moonshotai/kimi-k3.1-pro'
+    assert DEFAULT_NVIDIA_MODEL == 'nvidia/nemotron-3.5-super-vl-120b-a12b'
     assert NVIDIA_BASE_URL == 'https://integrate.api.nvidia.com/v1'
     assert (result.provider, result.task, result.model, result.text) == (
         'nvidia', 'chat_completion', DEFAULT_NVIDIA_MODEL, 'Resumen de Kimi')
@@ -452,10 +452,10 @@ def test_nvidia_success_uses_openai_compatible_endpoint(request_data, monkeypatc
     # > base_url sustituye al proveedor de HF: la petición va directa a NVIDIA con su clave.
     assert config == {'base_url': NVIDIA_BASE_URL, 'api_key': NVIDIA_KEY, 'timeout': 60}
     assert (request['model'], request['max_tokens'], request['extra_body']) == (
-        DEFAULT_NVIDIA_MODEL, 1024, {'reasoning_effort': 'low'})
+        DEFAULT_NVIDIA_MODEL, 4096, {'reasoning_effort': 'low'})
     inspect.signature(real.__init__).bind(None, **config)
     inspect.signature(real.chat_completion).bind(None, **request)
-    assert 'IA provider=nvidia model=moonshotai/kimi-k3.1-pro' in caplog.text
+    assert 'IA provider=nvidia model=nvidia/nemotron-3.5-super-vl-120b-a12b' in caplog.text
     assert 'ai_status=completed' in caplog.text and 'attempt=1' in caplog.text
     assert NVIDIA_KEY not in caplog.text
 
@@ -478,6 +478,8 @@ def test_nvidia_sends_exactly_the_hf_payload_and_system_prompt(monkeypatch):
     monkeypatch.setattr(huggingface_hub, 'InferenceClient', Recorder)
     AIClient('hf').analyze(request)
     assert nvidia['request'][0]['messages'] == hf['request']['messages']
+    # > La web muestra el texto tal cual: el prompt pide texto plano y breve.
+    assert 'sin Markdown, en un máximo de 150 palabras' in hf['request']['messages'][0]['content']
 
 
 def test_nvidia_missing_key_fails_before_building_the_client(request_data, monkeypatch):
@@ -555,7 +557,7 @@ def test_nvidia_reasoning_only_with_the_real_sdk_output_type(request_data, monke
     # >> Mismo objeto que construye chat_completion: reasoning_content está fuera del esquema del SDK.
     from huggingface_hub import ChatCompletionOutput
     output = ChatCompletionOutput.parse_obj_as_instance({
-        'id': 'x', 'object': 'chat.completion', 'created': 0, 'model': 'moonshotai/kimi-k3.1-pro',
+        'id': 'x', 'object': 'chat.completion', 'created': 0, 'model': 'nvidia/nemotron-3.5-super-vl-120b-a12b',
         'system_fingerprint': '', 'usage': {'prompt_tokens': 1, 'completion_tokens': 1024, 'total_tokens': 1025},
         'choices': [{'index': 0, 'finish_reason': 'length',
                      'message': {'role': 'assistant', 'content': None, 'reasoning_content': 'Analizo...'}}]})
@@ -580,7 +582,7 @@ def test_from_env_nvidia_defaults_and_custom_values():
     from swarmtrade_app.ai_client import DEFAULT_NVIDIA_MODEL
     default = AIClient.from_env({'AI_PROVIDER': ' NVIDIA '})
     assert (default.provider, default.model, default.timeout, default.max_tokens) == (
-        'nvidia', DEFAULT_NVIDIA_MODEL, 60.0, 1024)
+        'nvidia', DEFAULT_NVIDIA_MODEL, 60.0, 4096)
     custom = AIClient.from_env({'AI_PROVIDER': 'nvidia', 'NVIDIA_MODEL': 'mistralai/mistral-large-4-1t-a52b',
                                 'NVIDIA_TIMEOUT': '90', 'NVIDIA_MAX_TOKENS': '4096', 'HF_MAX_TOKENS': '64'})
     assert (custom.provider, custom.model, custom.timeout, custom.max_tokens) == (

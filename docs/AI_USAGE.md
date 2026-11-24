@@ -53,6 +53,6 @@
 | Campo | Contenido |
 | --- | --- |
 | Qué se pidió | Añadir el mejor modelo de [build.nvidia.com](https://build.nvidia.com/models) como alternativa a Hugging Face, porque la cuenta HF del autor tenía 0 $ de saldo e Inference Providers rechazaba las llamadas |
-| Qué se aceptó | En los ficheros comunes, `render.yaml` con `NVIDIA_API_KEY` (`sync: false`) y `NVIDIA_MODEL` (`moonshotai/kimi-k3.1-pro`), manteniendo `AI_PROVIDER=mock`. El código y su documentación se registran en el AI_USAGE del [II](../proyectos/proyecto_ii/AI_USAGE.md) y del [III](../proyectos/proyecto_iii/AI_USAGE.md) |
+| Qué se aceptó | En los ficheros comunes, `render.yaml` con `NVIDIA_API_KEY` (`sync: false`) y `NVIDIA_MODEL` (`nvidia/nemotron-3.5-super-vl-120b-a12b`), manteniendo `AI_PROVIDER=mock`. El código y su documentación se registran en el AI_USAGE del [II](../proyectos/proyecto_ii/AI_USAGE.md) y del [III](../proyectos/proyecto_iii/AI_USAGE.md) |
 | Qué se rechazó o no se adoptó | Cambiar el proveedor del CI o de Render a `nvidia`: el CI sigue en `mock` y la clave la introduce el autor en el panel. Actualizar las cifras ligadas al run 45288524693, que describen ese run y no la verificación local |
 | Cómo se verificó | Local con `.venv-ii`, sin red: II 162 passed y 85,97 % de cobertura, `marimo check` sin avisos; III 134 passed y 97,20 %. `render.yaml` cargado con PyYAML |

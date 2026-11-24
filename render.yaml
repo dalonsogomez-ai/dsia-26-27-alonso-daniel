@@ -31,7 +31,7 @@ services:
       - key: NVIDIA_API_KEY
         sync: false
       - key: NVIDIA_MODEL
-        value: moonshotai/kimi-k3.1-pro
+        value: nvidia/nemotron-3.5-super-vl-120b-a12b
       # Datos reales: dsia_web.serve las lee al arrancar (no llegan al build de Docker).
       - key: ALPACA_PAPER_API_KEY_ID
         sync: false
