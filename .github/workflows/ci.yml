@@ -81,6 +81,8 @@ jobs:
           python -m swarmtrade_app run --data "$smoke/demo.csv" --artifact "$smoke/run/model.joblib" --output "$smoke/run/report.json" --provider mock
           test -s "$smoke/run/test_metrics.json"
           python -c "import json, sys; r = json.load(open(sys.argv[1])); assert r['ai_status'] == 'completed', r['ai_status']" "$smoke/run/report.json"
+          # > Métricas publicadas en el README del II: el smoke falla si la receta deja de reproducirlas (tolerancia 1e-6).
+          python -c "import json, math, pathlib, sys; run = pathlib.Path(sys.argv[1]); v = json.loads((run / 'validation.json').read_text()); t = json.loads((run / 'test_metrics.json').read_text()); got = {'validation ridge.rmse': v['validation']['ridge']['rmse'], 'test rmse': t['rmse'], 'test baseline.rmse': t['baseline']['rmse']}; want = {'validation ridge.rmse': 0.064383, 'test rmse': 0.070995, 'test baseline.rmse': 0.066148}; bad = {k: (got[k], want[k]) for k in want if not math.isclose(got[k], want[k], rel_tol=0, abs_tol=1e-6)}; assert not bad, bad; print('Métricas reproducidas:', got)" "$smoke/run"
       - name: Proyecto III · pipeline y contrato HTTP
         env:
           PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
