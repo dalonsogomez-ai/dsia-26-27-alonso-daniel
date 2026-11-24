@@ -20,10 +20,10 @@
 
 ## IA y broker paper
 
-`>` HF: vigilar latencia, `error_type`, errores de autorización (401/403) o de disponibilidad (404) y el número de reintentos por 429, 5xx o timeout. Una explicación nunca altera predicciones ni pesos. `mock` es la vía reproducible del CI; la conectividad real se prueba aparte y se describe como tal.
+`>` HF y NVIDIA: vigilar latencia, el `kind` de cada `AIClientError` (`auth` para 401/403, `not_found` para 404, `rate_limited`, `timeout`, `unavailable` e `invalid_response`) y el número de reintentos por 429, 5xx o timeout. Desde `v0.9.0-rc2`, el III registra el proveedor, el `kind` y la latencia en la línea ERROR `analyze_failed` y el resultado de la última llamada en `/health` (`ai_last_call`). Una explicación nunca altera predicciones ni pesos. `mock` es la vía reproducible del CI; la conectividad real se prueba aparte y se describe como tal.
 
 `>` Broker paper (fuera del enunciado): reconciliar `accepted`, `new`, `partially_filled`, `filled`, `rejected` y `canceled` contra el journal y los `client_order_id`, y comprobar saldo y posiciones tras las ejecuciones. Ante un timeout de envío, consultar el broker antes de repetir.
 
 ## Estado
 
-`=>` El Proyecto III cubre la parte operativa: [despliegue en Render](https://dsia-swarmtrader.onrender.com) que reentrena con datos reales de Alpaca en cada arranque, `/health`, `/api/v1/metrics` con latencia y contadores, y `/api/v1/pipeline` con el journal de etapas del lote ([README del III](../proyecto_iii/README.md#operación-y-verificación)). Siguen pendientes las alertas automáticas de deriva, la evaluación de bloques madurados y el seguimiento persistente de órdenes paper.
+`=>` El Proyecto III cubre la parte operativa: [despliegue en Render](https://dsia-swarmtrader.onrender.com) que reentrena con datos reales de Alpaca en cada arranque, `/health`, `/api/v1/metrics` con latencia y contadores, y `/api/v1/pipeline` con el journal de etapas del lote ([README del III](../proyecto_iii/README.md#operación)). Siguen pendientes las alertas automáticas de deriva, la evaluación de bloques madurados y el seguimiento persistente de órdenes paper.

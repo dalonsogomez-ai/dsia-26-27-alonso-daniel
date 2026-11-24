@@ -108,7 +108,7 @@ python -m pytest -q --cov=swarmtrade_app --cov-report=term-missing
 | Acierto de signo | Proporción de casos con `(y > 0) == (ŷ > 0)` | Descriptiva; las etiquetas a 21 sesiones se solapan y no son observaciones independientes |
 | Baseline Dummy | Media del target en train (0,016455 en la demo) | La referencia que el modelo debe batir |
 
-`=>` Ejecución de referencia (680 sesiones, 8 símbolos, semilla 42), reproducida el 24/11/2026 con la receta anterior y comprobada en el CI con tolerancia 1e-6:
+`=>` Ejecución de referencia (680 sesiones, 8 símbolos, semilla 42), reproducida el 24/11/2026 con la receta anterior. Con los commits de la RC2, el smoke de la CLI del CI compara los 15 valores de esta tabla con tolerancia 1e-6 (hasta `e433fae`, solo el RMSE de Ridge en validation y en el holdout y el del baseline):
 
 | Bloque | Modelo | RMSE | MAE | R² |
 | --- | --- | --- | --- | --- |
@@ -148,7 +148,7 @@ python -m swarmtrade_app run --data "$DSIA_BARS_CSV" --artifact runs/historico/m
 
 `>` `run` es el job completo de inferencia ([`pipeline.py`](swarmtrade_app/pipeline.py)): valida el CSV, recarga `model.joblib` (rechaza otra versión de sklearn, otro universo o una fecha anterior al entrenamiento), calcula los factores de la última sesión cerrada, predice el retorno a 21 sesiones por símbolo, asigna capital y escribe el informe JSON. Si la IA falla después de inferir, el informe se conserva con `ai_status=pending`.
 
-`~>` **Qué aporta el modelo.** Los 14 factores son z-scores *cross-section*: se normalizan entre los símbolos de cada fecha. Por eso la media diaria de las predicciones (`mean_prediction`) es constante e igual a la media del target en train: en la demo, 0,016455 en cualquier fecha, el mismo valor que predice el baseline Dummy. El modelo no anticipa el nivel del mercado; aporta el **orden relativo** entre símbolos. Por eso el resumen que recibe la IA incluye también la dispersión (`prediction_std`), el spread (`prediction_spread`, máximo menos mínimo de los retornos predichos de la fecha) y la mejor señal (`top_symbol`). En la demo, DEMO06 encabeza el orden con 4,58 % y el spread es de 5,67 puntos.
+`~>` **Qué aporta el modelo.** Los 14 factores son z-scores *cross-section*: se normalizan entre los símbolos de cada fecha. Por eso la media diaria de las predicciones (`mean_prediction`) es constante e igual a la media del target en train: en la demo, 0,016455 en cualquier fecha, el mismo valor que predice el baseline Dummy. El modelo no anticipa el nivel del mercado; aporta el **orden relativo** entre símbolos. Por eso el resumen que recibe la IA incluye también la dispersión (`prediction_std`), el spread (`prediction_spread`, máximo menos mínimo de los retornos predichos de la fecha) y la mejor señal (`top_symbol`). En la demo, DEMO06 encabeza el orden con 4,58 % y el spread es de 5,67 puntos; con los commits de la RC2, el smoke de la CLI del CI comprueba esas cifras, la media y `top_symbol` con tolerancia 1e-6.
 
 `~>` **Asignación.** `run` usa por defecto `--decision conviction --mean-source model --risk-aversion 1`: el optimizador de SwarmTrader v1.4 maximiza el crecimiento logarítmico sobre escenarios cuya media es la predicción sklearn, sin tope por nombre ni mínimo de posiciones, así que puede asignar el 100 % a un único activo. Con `--mean-source model`, los pesos por debajo de `1e-4` (menos de 1 USD sobre un nocional de 10.000 USD) se anulan como residuo numérico y el resto se renormaliza. Fórmulas, fuentes y límites en [DECISION.md](DECISION.md).
 
@@ -172,7 +172,7 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 | --- | --- |
 | Tarea Inference | `chat_completion` |
 | Modelo del Hub | [`Qwen/Qwen2.5-7B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) (`DEFAULT_HF_MODEL`), pesos con licencia Apache-2.0 según su ficha |
-| Para qué | Explicar en español, después de inferir, el resumen agregado del experimento (fecha, modelo, horizonte, número de símbolos, media, dispersión, spread, mejor señal, RMSE de validation y tipo de datos). No recibe barras, cuentas ni claves, y no decide pesos ni órdenes |
+| Para qué | Explicar en español, después de inferir, el resumen agregado del experimento (fecha, modelo, horizonte, número de símbolos, media, dispersión, spread, mejor señal, RMSE de validation y tipo de datos) y, si se pide un símbolo concreto, su predicción y su puesto (`focus_*`). No recibe barras, cuentas ni claves, y no decide pesos ni órdenes |
 | En tests y CI | Siempre `mock` (`mock-determinista-v1`), sin red ni token. Su texto incluye la dispersión y la mejor señal |
 | SDK | `huggingface_hub.InferenceClient`, proveedor de inferencia `auto` configurable |
 
@@ -195,16 +195,25 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 
 `~>` **Validación del resumen.** `AnalysisRequest` comprueba tipos y rangos al construirse: `horizon` y `symbols` enteros positivos, medias y dispersiones finitas, `validation_rmse` finito y no negativo, `as_of` en formato ISO y `data_kind` en {`synthetic`, `alpaca`, `local`}. Un resumen inválido lanza `AIClientError("Resumen para la IA no válido: <motivo>")` antes de llamar a nadie. Los campos nuevos son opcionales, de modo que los informes anteriores siguen siendo legibles. `analyze-summary` traduce las claves sobrantes o ausentes del JSON a un error de dominio.
 
-`~>` **Errores y reintentos.** Se sigue la tabla del tema de APIs: se reintenta lo transitorio y no la configuración.
+`~>` **Símbolo enfocado.** `focus_symbol` (texto no vacío), `focus_prediction` (número finito) y `focus_rank` (entero entre 1 y `symbols`, nunca `bool`) son opcionales y van juntos: el III los rellena al explicar un símbolo concreto del informe. Solo viajan al proveedor si existen; entonces el prompt de sistema pide situar ese símbolo respecto al resto y el texto `mock` añade `símbolo analizado X: predicción Y, puesto R de N`. Sin ellos, el prompt y el texto `mock` no cambian.
 
-| Situación | Respuesta del cliente | Reintento |
-| --- | --- | --- |
-| 401 / 403 | `Token de Hugging Face inválido o sin permisos` (con `nvidia`: `Clave de NVIDIA inválida o sin permisos`) | No |
-| 404 | `Modelo o proveedor de inferencia no disponible` (con `nvidia`: `Modelo de NVIDIA no disponible`) | No |
-| 429, 5xx, timeout o error de conexión | `AIClientError` genérico al agotar los intentos | Hasta 2 (`MAX_RETRIES`), con esperas de 0,5 s y 1 s más jitter |
-| `nvidia` responde sin `message.content` útil | `NVIDIA devolvió solo razonamiento, sin respuesta final; aumenta NVIDIA_MAX_TOKENS` o `NVIDIA devolvió una respuesta vacía` | No |
+`~>` **Errores y reintentos.** Se sigue la tabla del tema de APIs: se reintenta lo transitorio y no la configuración. Cada `AIClientError` lleva `kind`, la clase del fallo, para que quien lo consuma decida sin leer el mensaje (el III lo traduce a 502, 503 o 504).
 
-`>>` El token y la clave nunca aparecen en mensajes ni logs, y si el modelo los repite en su texto se sustituyen por `[REDACTED]`; la espera entre intentos es inyectable para que los tests no duerman. Si el servicio falla tras inferir, el informe conserva las predicciones con `ai_status=pending` y no se simula una respuesta real.
+| Situación | Respuesta del cliente | `kind` | Reintento |
+| --- | --- | --- | --- |
+| Entorno, proveedor, límites o resumen inválidos; falta `HF_TOKEN` o `NVIDIA_API_KEY` | Mensaje de dominio | `config` | No |
+| 401 / 403 | `Token de Hugging Face inválido o sin permisos` (con `nvidia`: `Clave de NVIDIA inválida o sin permisos`) | `auth` | No |
+| 404 | `Modelo o proveedor de inferencia no disponible` (con `nvidia`: `Modelo de NVIDIA no disponible`) | `not_found` | No |
+| 429 | `AIClientError` genérico al agotar los intentos | `rate_limited` | Hasta 2 (`MAX_RETRIES`), con esperas de 0,5 s y 1 s más jitter |
+| 5xx | Igual | `unavailable` | Igual |
+| 504 del proveedor (su plazo venció; así llega la cola de NVIDIA) | Igual | `timeout` | Igual |
+| Timeout del cliente (`TimeoutError`, `httpx.TimeoutException`) | Igual | `timeout` | Igual |
+| Conexión rechazada o cortada (`ConnectionError`, resto de `httpx.TransportError`) | Igual | `unavailable` | Igual |
+| 408 Request Timeout | `AIClientError` genérico | `timeout` | No |
+| Otro 4xx (400, 402…) o fallo desconocido del SDK | `AIClientError` genérico | `unavailable` | No |
+| Respuesta vacía (`hf` o `nvidia`) o solo razonamiento (`nvidia`) | `Inferencia HF fallida: el modelo devolvió una respuesta vacía`, `NVIDIA devolvió solo razonamiento, sin respuesta final; aumenta NVIDIA_MAX_TOKENS` o `NVIDIA devolvió una respuesta vacía` | `invalid_response` | No |
+
+`>>` El token y la clave nunca aparecen en mensajes ni logs, y si el modelo los repite en su texto se sustituyen por `[REDACTED]`; la espera entre intentos es inyectable para que los tests no duerman. `AIClient.secret_env` da el nombre de la variable de la clave (`HF_TOKEN`, `NVIDIA_API_KEY` o `None` con `mock`) sin leer su valor: el III lo usa para validar la configuración al arrancar. Si el servicio falla tras inferir, el informe conserva las predicciones con `ai_status=pending` y no se simula una respuesta real.
 
 ```bash
 cp .env.example .env
@@ -212,11 +221,11 @@ cp .env.example .env
 python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.joblib --output runs/demo/hf.json --provider hf
 ```
 
-`=>` Según el Hub el 23/11/2026, `Qwen2.5-7B-Instruct` tenía un único Inference Provider activo, **featherless-ai**, que es el que resuelve `HF_INFERENCE_PROVIDER=auto`. Si deja de estar disponible, `HF_MODEL=Qwen/Qwen3-8B` ofrece la misma tarea, licencia Apache-2.0 y el mismo proveedor en esa fecha. **No se ha hecho ninguna llamada autenticada**: se cumple la alternativa del enunciado (`mock` + cliente tipado + `HF_TOKEN=` en [.env.example](.env.example)). Proveedor, costes y aportaciones de IA en [AI_USAGE.md](AI_USAGE.md).
+`=>` Según el Hub el 23/11/2026, `Qwen2.5-7B-Instruct` tenía un único Inference Provider activo, **featherless-ai**, que es el que resuelve `HF_INFERENCE_PROVIDER=auto`. Si deja de estar disponible, `HF_MODEL=Qwen/Qwen3-8B` ofrece la misma tarea, licencia Apache-2.0 y el mismo proveedor en esa fecha. El 24/11/2026 el despliegue de Render hizo **llamadas autenticadas** con el token del autor y **fallaron porque la cuenta tenía 0 $ de crédito**: `BadRequestError` con `HF_INFERENCE_PROVIDER=auto` y `Qwen/Qwen2.5-7B-Instruct`, y `HfHubHTTPError` con `deepinfra` y Qwen2.5-72B. Ninguna respuesta real de HF respalda esta entrega: el contrato y el cliente están probados con `mock` y con dobles del SDK, la alternativa del enunciado (`mock` + cliente tipado + `HF_TOKEN=` en [.env.example](.env.example)). Proveedor, costes y aportaciones de IA en [AI_USAGE.md](AI_USAGE.md).
 
 ### Alternativa NVIDIA
 
-`->` El 24/11/2026 la cuenta de Hugging Face del autor tenía 0 $ de saldo e Inference Providers rechazaba las llamadas. Para poder explicar informes con un modelo real se añade `AI_PROVIDER=nvidia`, que usa el catálogo de [build.nvidia.com](https://build.nvidia.com/models). El proveedor `hf` se mantiene intacto porque es el que pide el enunciado.
+`->` El 24/11/2026 la cuenta de Hugging Face del autor tenía 0 $ de saldo y las llamadas autenticadas desde Render fallaban (párrafo anterior). Para poder explicar informes con un modelo real se añade `AI_PROVIDER=nvidia`, que usa el catálogo de [build.nvidia.com](https://build.nvidia.com/models). El proveedor `hf` se mantiene intacto porque es el que pide el enunciado.
 
 | Elemento | Valor |
 | --- | --- |
@@ -244,7 +253,7 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.joblib --output runs/demo/nvidia.json --provider nvidia
 ```
 
-`=>` Las pruebas del proveedor `nvidia` usan un `InferenceClient` falso y no salen a la red: éxito, falta de clave, 401/403/404 sin reintento, 429 con reintento y espera inyectada, respuesta solo de razonamiento o vacía, redacción de la clave, `from_env` y la CLI con `--provider nvidia`. Tampoco se ha hecho ninguna llamada autenticada a NVIDIA desde este repositorio.
+`=>` Las pruebas del proveedor `nvidia` usan un `InferenceClient` falso y no salen a la red: éxito, falta de clave, 401/403/404 sin reintento, 429 con reintento y espera inyectada, respuesta solo de razonamiento o vacía, redacción de la clave, `from_env` y la CLI con `--provider nvidia`. Las llamadas autenticadas reales a NVIDIA se hicieron el 24/11/2026 desde el despliegue de Render, con la clave guardada solo en su panel: tres por modelo (NVDA, AAPL y XOM) para la tabla anterior. Desde entonces «Explicar símbolo» usa `AI_PROVIDER=nvidia` en Render; los tests, el CI y la CLI siguen en `mock` por defecto.
 
 ## Del Proyecto II al Proyecto III
 
@@ -258,7 +267,7 @@ python -m swarmtrade_app run --data data/demo.csv --artifact runs/demo/model.job
 | pytest + [.env.example](.env.example) con `HF_TOKEN=` | CI y robustez del servicio | [`tests/`](../proyecto_iii/tests), [`observability.py`](../proyecto_iii/dsia_web/observability.py), jobs `proyectos-ii-y-iii` y `proyecto-iii-docker` del [workflow](../../.github/workflows/ci.yml) |
 | README, AI_USAGE y [plan de monitorización](MONITORIZACION.md) | Despliegue, monitorización y exposición | [`Dockerfile`](../proyecto_iii/Dockerfile), [`render.yaml`](../../render.yaml), `/health`, `/api/v1/metrics`, `/api/v1/pipeline` ([`journal.py`](../proyecto_iii/dsia_web/journal.py)), [`evidence.py`](../proyecto_iii/dsia_web/evidence.py), dashboard en [`static/`](../proyecto_iii/dsia_web/static) |
 
-`=>` El III no reescribe el núcleo: importa `infer` y `AIClient` y añade lo que el II deja fuera. Despliegue en **[https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com)** (Render, imagen Docker): al arrancar descarga barras reales de Alpaca, reentrena con este pipeline y publica solo predicciones y métricas (último dato 2026-11-20).
+`=>` El III no reescribe el núcleo: importa `infer` y `AIClient` y añade lo que el II deja fuera. Despliegue en **[https://dsia-swarmtrader.onrender.com](https://dsia-swarmtrader.onrender.com)** (Render, imagen Docker): al arrancar descarga barras reales de Alpaca, reentrena con este pipeline y publica solo predicciones y métricas (el 24/11/2026 servía `as_of` 2026-11-23); «Explicar símbolo» llama a este `AIClient` con `AI_PROVIDER=nvidia`.
 
 `>` Módulos del II:
 
@@ -285,11 +294,11 @@ python -m pytest -q --cov=swarmtrade_app --cov-report=term-missing
 python -m pytest -q -m integration
 ```
 
-`>>` Los tests cubren el esquema y la validación de datos, la preparación y la purga, el entrenamiento y la **recarga del artefacto con inferencia**, el contrato del cliente de IA (incluida la firma real de `InferenceClient`, la clasificación de errores y los reintentos con espera simulada), la asignación y el adaptador paper con dobles. Los de integración recorren la CLI completa con archivos temporales. `tests/conftest.py` bloquea `socket.connect`, `socket.connect_ex`, `socket.create_connection` y `socket.getaddrinfo`, y aísla la suite de un `.env` local; el subproceso del test de integración recibe `AI_PROVIDER=mock` sin variables `HF_*` ni `NVIDIA_*`.
+`>>` Los tests cubren el esquema y la validación de datos, la preparación y la purga, el entrenamiento y la **recarga del artefacto con inferencia** (las predicciones del informe son las del estimador guardado, y un artefacto de otra versión de sklearn se rechaza), el contrato del cliente de IA (incluida la firma real de `InferenceClient`, la clasificación de errores y los reintentos con espera simulada), la asignación y el adaptador paper con dobles. Los de integración recorren la CLI completa con archivos temporales. `tests/conftest.py` bloquea `socket.connect`, `socket.connect_ex`, `socket.create_connection` y `socket.getaddrinfo`, y aísla la suite de un `.env` local; el subproceso del test de integración recibe `AI_PROVIDER=mock` sin variables `HF_*` ni `NVIDIA_*`.
 
-`>>` Workflow: [.github/workflows/ci.yml](../../.github/workflows/ci.yml). El job `proyectos-ii-y-iii` ejecuta en Ubuntu con Python 3.12 los tests del II con `--cov-fail-under=80`, `marimo check` de los cuatro notebooks y un smoke de la CLI: genera la demo, comprueba su sha256, entrena, evalúa, ejecuta `run` con `mock` y compara `validation.json` (`ridge.rmse` 0,064383) y `test_metrics.json` (`rmse` 0,070995, `baseline.rmse` 0,066148) con tolerancia 1e-6.
+`>>` Workflow: [.github/workflows/ci.yml](../../.github/workflows/ci.yml). El job `proyectos-ii-y-iii` ejecuta en Ubuntu con Python 3.12 los tests del II con `--cov-fail-under=80`, `marimo check` de los cuatro notebooks y un smoke de la CLI: genera la demo, comprueba su sha256, la inspecciona (desde los commits de la RC2), entrena, evalúa, ejecuta `run` con `mock` y compara con tolerancia 1e-6 lo que produce con lo publicado: desde los commits de la RC2, los 15 valores de la [tabla de referencia](#métricas-de-la-demo) (`validation.json` y `test_metrics.json`) y la inferencia de `report.json` (media 0,016455, spread 0,056672, `top_symbol` DEMO06 y su predicción 0,045789); hasta `e433fae`, solo `ridge.rmse` 0,064383, `rmse` 0,070995 y `baseline.rmse` 0,066148.
 
-`=>` Último run verde de `main`: [45288524693](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45288524693). Tests del II en ese run: 74 passed y 83,42 % de cobertura; en local el 24/11/2026 (`.venv-ii`, con el proveedor `nvidia`): 162 passed y 85,97 %. Detalle en [VERIFICACION.md](VERIFICACION.md).
+`=>` Verificado en local el 24/11/2026 (`.venv-ii`, `pytest -q --cov=swarmtrade_app --cov-fail-under=80`): **197 passed y 86,50 %** de cobertura (190 unitarios y 7 de integración: `pytest -q -m integration` → 7 passed), con `ai_client.py` al 100 %, y el smoke de la CLI con las 15 métricas y la inferencia dentro de 1e-6. CI: [historial de `main`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions?query=branch%3Amain); último run comprobado: [45306204500](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/actions/runs/45306204500) (`e433fae`, 24/11/2026), en verde. Detalle en [VERIFICACION.md](VERIFICACION.md).
 
 ## Cobertura del enunciado
 
@@ -299,7 +308,7 @@ python -m pytest -q -m integration
 | 2. Pipeline reproducible con logs | CLI `inspect`/`train`/`evaluate`/`run`, logs por etapa y códigos de salida | Cumple |
 | 3. Entrenamiento sklearn, persistencia, inferencia integrada y métricas | `training.py`, `model.joblib`, `run` y las tablas de métricas | Cumple |
 | 4. pytest unitario + integración con carga e inferencia del modelo | `tests/`, recarga del artefacto y CLI completa | Cumple |
-| 5. Borde HF con `mock` y proveedor real documentado | `AIClient`, `chat_completion` + `Qwen/Qwen2.5-7B-Instruct` | `mock` comprobado; llamada real no realizada (alternativa del enunciado) |
+| 5. Borde HF con `mock` y proveedor real documentado | `AIClient`, `chat_completion` + `Qwen/Qwen2.5-7B-Instruct`; alternativa `nvidia` | `mock` y dobles comprobados (alternativa del enunciado); llamadas reales a HF del 24/11 fallidas por falta de crédito; en NVIDIA, de cinco candidatos medidos en Render dos agotaron el timeout y Nemotron 3.5 Super respondió en las tres llamadas |
 | 6. `.env.example` con `HF_TOKEN=` y `requirements.txt` | [.env.example](.env.example), [requirements.txt](requirements.txt) con `scikit-learn` y `huggingface_hub` | Cumple |
 | 7. `AI_USAGE.md` con proveedor, tarea, modelo y lo aceptado | [AI_USAGE.md](AI_USAGE.md) | Cumple |
 | 8. Estructura modular ampliable | [Del Proyecto II al Proyecto III](#del-proyecto-ii-al-proyecto-iii) | Cumple; el III la reutiliza |
@@ -315,4 +324,6 @@ python -m pytest -q -m integration
 - `~>` **23 noviembre:** integración del II ([`e524ec0`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/commit/e524ec0)) y del III ([`3d991d2`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/commit/3d991d2)) en el repositorio de entrega con Codex (`gpt-6.2-sol`); auditoría de cumplimiento y mejoras en commits pequeños con Claude Code (Claude Opus 5.5); [PR #1](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/1) fusionado (`a5a5b9b`), tag [`v0.9.0-rc1`](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/releases/tag/v0.9.0-rc1) y despliegue en Render.
 - `>` **23 y 24 noviembre:** el despliegue pasa a datos reales de Alpaca ([PR #2](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/2), `bed8312`; [PR #3](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/pull/3), `033d134`).
 - `~>` **24 noviembre:** revisión del borde HF (validación del resumen, errores clasificados, reintentos y `from_env`), umbral de pesos `1e-4`, comprobación de métricas en el CI y esta documentación con la leyenda de la wiki.
+- `~>` **24 noviembre:** las llamadas autenticadas a HF desde Render fallan por falta de crédito; se añade el proveedor alternativo `nvidia` (`a86b9de`) y se elige Nemotron 3.5 Super tras medir cinco modelos en Render (`edb049c`).
+- `>` **24 noviembre:** `kind` en `AIClientError` y campos `focus_*` en `AnalysisRequest`; tras la revisión adversarial, plazo vencido (`timeout`, también 408 y 504) separado de la conexión caída (`unavailable`) y `AIClient.secret_env`; en la ronda de verificación, claves falsas de los tests sin forma de clave real e `inspect` en el smoke de la CLI del CI; en la segunda ronda, pruebas de que las predicciones salen del estimador guardado, del rechazo de otra versión de sklearn y de `choices=[]` en HF, las 15 métricas de referencia y la inferencia comparadas en el CI y las enmiendas del [contrato](PROBLEMA.md#enmiendas-posteriores) marcadas como tales (`<commit-arreglos-auditoria>`).
 - `=>` **Octubre:** no hay commits del Proyecto II en octubre, aunque el enunciado pide historial a lo largo de ese mes. El trabajo empezó el 11 y 12 de noviembre y entró en Git el 23. No se reescriben fechas ni se fabrican commits.
