@@ -274,6 +274,11 @@ class AIClient:
         self.inference_provider = inference_provider
         self._sleep = sleep  # > Inyectable: las pruebas registran las esperas sin dormir.
 
+    @property
+    def secret_env(self) -> str | None:
+        """> Nombre de la variable con la clave del proveedor (``None`` con mock); nunca lee su valor."""
+        return _PROVIDERS[self.provider].secret_env if self.provider in _PROVIDERS else None
+
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> AIClient:
         """Crea el cliente desde ``AI_PROVIDER``, ``HF_*`` y ``NVIDIA_*``; la CLI del II y el III lo comparten.

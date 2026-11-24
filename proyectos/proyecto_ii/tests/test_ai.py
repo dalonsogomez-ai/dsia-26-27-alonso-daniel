@@ -284,6 +284,15 @@ def test_request_timeout_408_is_kind_timeout_without_retry(request_data, monkeyp
     assert err.value.kind == 'timeout'
 
 
+@pytest.mark.parametrize('provider,secret', [('mock', None), ('hf', 'HF_TOKEN'), ('huggingface', 'HF_TOKEN'),
+                                             ('nvidia', 'NVIDIA_API_KEY')])
+def test_secret_env_names_the_key_without_reading_it(provider, secret, monkeypatch):
+    # >> El III comprueba al arrancar que la clave existe; el cliente solo dice cómo se llama la variable.
+    monkeypatch.delenv('HF_TOKEN', raising=False)
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    assert AIClient(provider).secret_env == secret
+
+
 def test_empty_answer_fails_without_retry(request_data, monkeypatch):
     import huggingface_hub
     calls = {'n': 0}

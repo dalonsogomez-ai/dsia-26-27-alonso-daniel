@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import statistics
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,8 +24,9 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
-from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest
+from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest, provider_name
 
+from . import __version__
 from .ai import client_from_env
 from .journal import read_recent_events
 from .observability import ObservabilityMiddleware, RequestMetrics, request_id
@@ -37,6 +39,8 @@ SYMBOL = re.compile(SYMBOL_PATTERN)
 MAX_BODY_BYTES = 2048
 DEFAULT_EVENTS, MAX_EVENTS = 20, 50
 ASCII_INT = re.compile(r"[0-9]{1,18}")
+COMMIT_HASH = re.compile(r"[0-9a-fA-F]{7,40}")
+KNOWN_PROVIDERS = frozenset({"mock", "hf", "nvidia"})
 
 
 class AnalyzeBody(BaseModel):
@@ -98,6 +102,44 @@ def is_readable_file(path: Path | None) -> bool:
         return False
 
 
+def deployed_commit(env: Mapping[str, str]) -> str:
+    """> Commit servido: RENDER_GIT_COMMIT (7 caracteres) en Render; si no, DSIA_COMMIT; si no, «local».
+
+    /health y /api/v1/metrics son públicos: solo se publica un hash hexadecimal de 7 a 40 caracteres.
+    Cualquier otro valor (p. ej. una clave pegada por error) sale como «invalid» y en el log queda solo
+    su longitud, igual que con AI_PROVIDER.
+    """
+    for name, keep in (("RENDER_GIT_COMMIT", 7), ("DSIA_COMMIT", 40)):
+        value = str(env.get(name) or "").strip()
+        if not value:
+            continue
+        if not COMMIT_HASH.fullmatch(value):
+            LOG.warning("%s no válido (%d caracteres): se publica commit=invalid", name, len(value))
+            return "invalid"
+        return value[:keep]
+    return "local"
+
+
+def ai_config_status(factory: Callable[[], AIClient], provider: str) -> str:
+    """>> R9: valida la configuración de IA al arrancar, sin red y sin detener el servicio.
+
+    Crea el cliente con la misma fábrica que ``analyze`` y comprueba que existe la variable de la
+    clave del proveedor (sin leer ni registrar su valor). Los mensajes de ``AIClientError`` de
+    configuración solo nombran variables y rangos. ``provider`` es la etiqueta del log: el nombre
+    si es conocido o «<no válido, N caracteres>».
+    """
+    try:
+        client = factory()
+    except AIClientError as error:
+        LOG.error("config_invalid ai_provider=%s %s", provider, error)
+        return "invalid"
+    secret = getattr(client, "secret_env", None)
+    if secret and not os.environ.get(secret, "").strip():
+        LOG.error("config_invalid ai_provider=%s Falta %s en el entorno", provider, secret)
+        return "invalid"
+    return "ok"
+
+
 def ranked_predictions(snapshot: Snapshot) -> list[Prediction]:
     """> Ranking por retorno predicho descendente; el puesto es la posición desde 1."""
     return sorted(snapshot.predictions, key=lambda row: -row.predicted_return)
@@ -125,6 +167,17 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
                metrics_clock: Callable[[], float] = monotonic) -> Starlette:
     @asynccontextmanager
     async def lifespan(app: Starlette):
+        app.state.build = {"version": __version__, "commit": deployed_commit(os.environ)}
+        # > Proveedor declarado (AI_PROVIDER normalizado como en el II); /health no llama al proveedor.
+        #   Uno desconocido se publica como «invalid» y en el log solo su longitud: /health es público y
+        #   el campo del panel podría contener una clave pegada por error.
+        #   Vacío o solo espacios = mock, igual que AIClient.from_env (recorta antes del valor por defecto).
+        declared = provider_name((os.getenv("AI_PROVIDER") or "").strip() or "mock")
+        known = declared in KNOWN_PROVIDERS
+        app.state.ai_provider = declared if known else "invalid"
+        app.state.ai_config = ai_config_status(
+            ai_client_factory, declared if known else f"<no válido, {len(declared)} caracteres>")
+        app.state.ai_last_call = "never"
         path = snapshot_path or Path(os.getenv("DSIA_SNAPSHOT", "runs/dsia-demo/snapshot.json"))
         journal = journal_path or (Path(os.environ["DSIA_JOURNAL"]) if os.getenv("DSIA_JOURNAL") else None)
         app.state.journal_path = journal
@@ -153,12 +206,20 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
                                    - snapshot.generated_at.astimezone(timezone.utc).date()).days
                                   if snapshot else None),
             "journal_available": is_readable_file(request.app.state.journal_path),
+            "ai_provider": request.app.state.ai_provider,
+            "ai_config": request.app.state.ai_config,
+            "ai_last_call": request.app.state.ai_last_call,
         }
         headers = {"Cache-Control": "no-store"}
+        build = request.app.state.build
         if snapshot is None:
-            return JSONResponse({"status": "unavailable", "checks": checks}, status_code=503, headers=headers)
-        return JSONResponse({"status": "ready", "run_id": snapshot.run_id, "as_of": str(snapshot.as_of),
-                             "checks": checks}, headers=headers)
+            return JSONResponse({"status": "unavailable", **build, "checks": checks}, status_code=503,
+                                headers=headers)
+        # >> R9 (tema 4, A3 opción A): IA mal configurada o última llamada fallida => 200 «degraded». El
+        #    informe se sigue sirviendo y el health check de Render, que solo mira el código, no reinicia.
+        degraded = checks["ai_config"] != "ok" or checks["ai_last_call"].startswith("failing")
+        return JSONResponse({"status": "degraded" if degraded else "ready", "run_id": snapshot.run_id,
+                             "as_of": str(snapshot.as_of), **build, "checks": checks}, headers=headers)
 
     async def report(request: Request) -> JSONResponse:
         snapshot = request.app.state.snapshot
@@ -226,9 +287,11 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
             client = ai_client_factory()
             answer = await run_in_threadpool(client.analyze, summary)
         except AIClientError as exc:
+            request.app.state.ai_last_call = f"failing:{exc.kind}"
             LOG.warning("analyze_unavailable request_id=%s error_type=%s", rid, type(exc).__name__)
             return error_response(request, 503, "ai_unavailable",
                                   "El proveedor de IA no está disponible. Inténtalo más tarde.")
+        request.app.state.ai_last_call = "ok"
         latency_ms = round((perf_counter() - started) * 1000, 3)
         LOG.info("analyze request_id=%s symbol=%s provider=%s model=%s latency_ms=%.2f",
                  rid, symbol, answer.provider, answer.model, latency_ms)
