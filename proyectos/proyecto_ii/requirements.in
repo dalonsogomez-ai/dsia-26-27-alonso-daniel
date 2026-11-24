@@ -1,16 +1,20 @@
-# -> Entorno compartido de los Proyectos II y III; requirements.txt fija las versiones comprobadas.
+# -> Dependencias directas del entorno compartido de los Proyectos II y III; requirements.txt fija las versiones comprobadas.
 # > pandas<3: el Proyecto I usa pandas 3 en otro entorno (.venv-i); no se instalan juntos.
 numpy>=1.26,<3
 pandas>=2.2,<3
 scipy>=1.11,<2
+# > Modelo clásico entrenado y persistido.
 scikit-learn>=1.6,<2
 joblib>=1.4,<2
+# > Borde de Hugging Face (InferenceClient); en tests y CI se usa mock.
 huggingface_hub>=0.34,<2
 python-dotenv>=1,<2
+# > Figuras y notebooks de inspección.
 matplotlib>=3.8,<4
 marimo>=0.10,<1
 pytest>=8,<10
 pytest-cov>=6,<8
+# > Adaptador opcional de Alpaca paper (II) e ingesta de barras del III.
 alpaca-py>=0.43,<1
 # > Dependencias directas del Proyecto III (API, servidor y cliente de pruebas de Starlette).
 starlette>=1,<2
