@@ -25,3 +25,6 @@ docs
 1_programacion_avanzada_python
 2_pruebas_y_despliegue
 proyectos/proyecto_i
+# > El vendor de React Flow ya está en dsia_web/static/vendor: la imagen no necesita npm ni sus dependencias.
+**/node_modules
+proyectos/proyecto_iii/frontend

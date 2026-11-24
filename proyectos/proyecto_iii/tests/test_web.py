@@ -1,9 +1,11 @@
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from starlette.testclient import TestClient
 
-from dsia_web.app import create_app
+from dsia_web.app import STATIC, create_app
 from dsia_web.build import main, write_snapshot
 from dsia_web.snapshot import read_snapshot
 
@@ -52,6 +54,58 @@ def test_dashboard_consumes_operation_and_analysis_endpoints_without_inline_code
     # > La CSP default-src 'self' bloquearía cualquier script, estilo o manejador inline.
     assert "<script>" not in page and "<style" not in page and " style=" not in page
     assert " on" + "click=" not in page and " on" + "submit=" not in page
+
+
+CANVAS_SCRIPTS = ("/static/vendor/react.production.min.js", "/static/vendor/react-dom.production.min.js",
+                  "/static/jsx-runtime.js", "/static/vendor/xyflow-react.umd.js", "/static/flow_canvas.js")
+
+
+def test_canvas_view_loads_vendored_react_flow_only_on_demand(report):
+    with TestClient(create_app(report[0])) as client:
+        page = client.get("/").text
+        script = client.get("/static/dashboard.js").text
+        canvas = client.get("/static/flow_canvas.js").text
+        served = {path: client.get(path) for path in CANVAS_SCRIPTS + ("/static/vendor/xyflow-react.css",)}
+    # > «Lienzo interactivo» como vista adicional: la lista nativa sigue siendo la vista por defecto.
+    for anchor in ('id="ops-view-list" aria-pressed="true"', 'id="ops-view-canvas" aria-pressed="false"',
+                   'id="ops-canvas"', '<ol id="ops-graph"'):
+        assert anchor in page
+    assert 'class="flow-canvas"' in page and "hidden></div>" in page
+    # > Carga diferida: la página no pide React ni React Flow hasta que se abre el lienzo.
+    assert "vendor/" not in page and "flow_canvas.js" not in page
+    for path in CANVAS_SCRIPTS:
+        assert f'"{path}"' in script
+        assert served[path].status_code == 200
+    assert '"/static/vendor/xyflow-react.css"' in script and served["/static/vendor/xyflow-react.css"].status_code == 200
+    # > Mismo modelo y mismo detalle que la lista: el lienzo solo dibuja lo que calcula pipelineModel.
+    assert "pipelineModel(" not in canvas and "FLOW_STATES" not in canvas and "selectFlowNode(flowModel, id)" in script
+    for name in ("ariaLabelConfig", "domAttributes", "aria-current", "tabIndex", "ArrowRight: 1", '"Home"', '"End"',
+                 "deleteKeyCode: null", "nodesDraggable: false"):
+        assert name in canvas
+    # > Todo desde 'self': ni CDN ni scripts inline (la CSP default-src 'self' los bloquearía).
+    for body in (script, canvas, served["/static/jsx-runtime.js"].text):
+        body = body.replace("http://www.w3.org/2000/svg", "")  # > Namespace SVG, no una petición.
+        assert "https://" not in body and "http://" not in body
+
+
+def test_vendored_react_flow_matches_lockfile_manifest_and_licenses():
+    static = STATIC / "vendor"
+    frontend = Path(__file__).resolve().parents[1] / "frontend"
+    manifest = json.loads((static / "manifest.json").read_text())
+    lock = json.loads((frontend / "package-lock.json").read_text())
+    package = json.loads((frontend / "package.json").read_text())
+    locked = {path.removeprefix("node_modules/"): info["version"] for path, info in lock["packages"].items()
+              if path.startswith("node_modules/") and not path.startswith("node_modules/@types/")}
+    assert manifest["packages"] == locked
+    # > Versiones exactas (sin ^ ni ~) e iguales a las del lockfile.
+    assert package["dependencies"] == {"@xyflow/react": "12.12.1", "react": "18.3.1", "react-dom": "18.3.1"}
+    assert all(locked[name] == version for name, version in package["dependencies"].items())
+    assert {path.name for path in static.iterdir()} == set(manifest["files"]) | {"manifest.json"}
+    for name, info in manifest["files"].items():
+        data = (static / name).read_bytes()
+        assert (len(data), hashlib.sha256(data).hexdigest()) == (info["bytes"], info["sha256"]), name
+    licenses = (static / "THIRD_PARTY_LICENSES.txt").read_text()
+    assert all(f"{name}@{version} (" in licenses for name, version in locked.items())
 
 
 @pytest.mark.parametrize("contents", [None, "{invalid", "{}"])

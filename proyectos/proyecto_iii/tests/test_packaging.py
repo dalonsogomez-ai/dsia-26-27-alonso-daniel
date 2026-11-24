@@ -83,3 +83,14 @@ def test_alpaca_secret_file_is_ignored_by_git_and_kept_out_of_the_image():
     kept = subprocess.run([git, "check-ignore", "--no-index", "proyectos/proyecto_iii/.env.example"], cwd=ROOT,
                           capture_output=True, text=True)
     assert kept.returncode == 1  # > La plantilla sí se versiona.
+
+
+def test_react_flow_vendor_ships_without_npm_in_the_image():
+    # > El lienzo de React Flow se sirve desde dsia_web/static/vendor, que el Dockerfile ya copia con el III:
+    #   ni node_modules ni el directorio frontend (package.json, lockfile y vendor.mjs) entran en la imagen.
+    dockerignore = (ROOT / ".dockerignore").read_text().split()
+    assert {"**/node_modules", "proyectos/proyecto_iii/frontend"} <= set(dockerignore)
+    assert "**/node_modules" in (ROOT / ".gitignore").read_text().split()
+    dockerfile = (ROOT / "proyectos/proyecto_iii/Dockerfile").read_text()
+    assert "COPY proyectos/proyecto_iii proyectos/proyecto_iii" in dockerfile
+    assert "npm" not in dockerfile and "node" not in dockerfile.lower().replace("nodes", "")

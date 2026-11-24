@@ -45,3 +45,6 @@ build/
 .coverage.*
 .claude-flow/
 __marimo__/
+
+# Dependencias de npm del vendor de React Flow (proyectos/proyecto_iii/frontend): se reinstalan con npm ci.
+**/node_modules

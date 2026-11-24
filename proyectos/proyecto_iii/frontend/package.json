@@ -1,0 +1,19 @@
+{
+  "name": "dsia-iii-frontend-vendor",
+  "private": true,
+  "version": "0.9.0",
+  "description": "Builds UMD de React y React Flow que sirve dsia_web/static/vendor para la vista «Lienzo interactivo» del panel Operación",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "vendor": "node vendor.mjs"
+  },
+  "dependencies": {
+    "@xyflow/react": "12.12.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

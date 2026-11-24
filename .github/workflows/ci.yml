@@ -109,6 +109,23 @@ jobs:
           assert r['summary']['top_symbol'] == 'DEMO06', r['summary']['top_symbol']
           print(f'Métricas e inferencia reproducidas: {len(want)} valores dentro de 1e-6 y top_symbol DEMO06')
           PY
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Proyecto III · vendor de React Flow reproducible desde el lockfile
+        working-directory: proyectos/proyecto_iii/frontend
+        run: |
+          # > npm ci instala exactamente package-lock.json (sin scripts de instalación) y vendor.mjs vuelve a
+          #   copiar los UMD con sus licencias y su manifiesto: lo versionado en static/vendor debe salir idéntico.
+          npm ci --ignore-scripts --no-audit --no-fund
+          node vendor.mjs
+          git diff --exit-code -- ../dsia_web/static/vendor
+          test -z "$(git status --porcelain -- ../dsia_web/static/vendor)"
+      - name: Proyecto III · avisos de seguridad de las dependencias del vendor
+        # > Informativo: consulta la base de avisos en vivo, así que un aviso nuevo no debe romper un commit ajeno.
+        continue-on-error: true
+        working-directory: proyectos/proyecto_iii/frontend
+        run: npm audit --omit=dev --audit-level=high
       - name: Proyecto III · pipeline y contrato HTTP
         env:
           PYTHONPATH: proyectos/proyecto_ii:proyectos/proyecto_iii
@@ -146,6 +163,7 @@ jobs:
           path: |
             runs/dsia-evidence/dashboard.png
             runs/dsia-evidence/operacion-390.png
+            runs/dsia-evidence/operacion-lienzo-390.png
             runs/dsia-evidence/pipeline.jsonl
           if-no-files-found: error
           retention-days: 30

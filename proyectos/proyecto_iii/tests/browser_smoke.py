@@ -186,6 +186,89 @@ def check_flow_keyboard(page) -> None:
     expect(page.locator("#ops-graph-detail")).to_contain_text("run_id servido")
 
 
+def check_flow_canvas(page, url: str, served_run_id: str) -> None:
+    """Vista «Lienzo interactivo» (React Flow): estados del backend real, igual que la lista, teclado y vuelta."""
+    page.locator("#ops-view-canvas").click()
+    nodes = page.locator("#ops-canvas .react-flow__node")
+    expect(nodes).to_have_count(len(FLOW))
+    expect(page.locator("#ops-graph")).to_be_hidden()
+    expect(page.locator("#ops-view-canvas")).to_have_attribute("aria-pressed", "true")
+    assert nodes.evaluate_all("nodes => nodes.map(n => n.dataset.node)") == list(FLOW)
+    served = page.request.get(urljoin(url, "/api/v1/pipeline?limit=20")).json()
+    health = page.request.get(urljoin(url, "/health")).json()
+    for node, state in expected_states(served["events"], served_run_id, health["status"]).items():
+        expect(page.locator(f'#ops-canvas [data-node="{node}"]')).to_have_attribute("data-state", state)
+    # > Los 8 estados del lienzo son los de la lista: ambos salen del mismo pipelineModel.
+    listed = page.locator("#ops-graph .flow-node").evaluate_all("nodes => nodes.map(n => n.dataset.state)")
+    assert nodes.evaluate_all("nodes => nodes.map(n => n.dataset.state)") == listed
+    # > Textos de accesibilidad de React Flow en español (por defecto, en inglés y sobre mover y borrar nodos).
+    described = page.locator("#ops-canvas").evaluate("canvas => canvas.textContent")
+    assert "Intro o Espacio abre los eventos" in described and "Press enter" not in described
+    # Teclado: una sola parada de tabulación, flechas, Inicio y Fin; Intro y Espacio abren el detalle compartido.
+    assert nodes.evaluate_all("nodes => nodes.filter(n => n.tabIndex === 0).length") == 1
+    nodes.first.focus()
+    for key in ("ArrowRight", "ArrowRight", "ArrowLeft"):
+        page.keyboard.press(key)
+    expect(page.locator("#ops-canvas .react-flow__node:focus")).to_have_attribute("data-node", "validate_input")
+    page.keyboard.press("End")
+    expect(page.locator("#ops-canvas .react-flow__node:focus")).to_have_attribute("data-node", "serve")
+    page.keyboard.press("Home")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Enter")
+    expect(page.locator('#ops-canvas [data-node="prepare"]')).to_have_attribute("aria-current", "true")
+    expect(page.locator('#ops-graph [data-node="prepare"]')).to_have_attribute("aria-current", "true")
+    expect(page.locator("#ops-graph-detail")).to_contain_text("Preparar")
+    page.keyboard.press("End")
+    scrolled = page.evaluate("window.scrollY")
+    page.keyboard.press("Space")
+    expect(page.locator("#ops-graph-detail")).to_contain_text("run_id servido")
+    # > El nodo es un div: Espacio selecciona sin desplazar la página.
+    assert page.evaluate("window.scrollY") == scrolled
+    # > Escape no deselecciona ni quita el foco (React Flow lo haría); la lista tampoco hace nada con él.
+    page.keyboard.press("Escape")
+    page.keyboard.press("Escape")
+    expect(page.locator("#ops-canvas .react-flow__node:focus")).to_have_attribute("data-node", "serve")
+    expect(page.locator('#ops-canvas [data-node="serve"]')).to_have_attribute("aria-current", "true")
+    # > Flechas y luego clic en otra etapa: sigue habiendo una sola parada de tabulación.
+    page.keyboard.press("Home")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+    page.locator('#ops-canvas [data-node="train"]').click()
+    expect(page.locator("#ops-graph-detail")).to_contain_text("Entrenar")
+    assert nodes.evaluate_all("nodes => nodes.filter(n => n.tabIndex === 0).map(n => n.dataset.node)") == ["train"]
+    # > Ningún texto de accesibilidad en inglés en las etapas.
+    assert set(nodes.evaluate_all("nodes => nodes.map(n => n.getAttribute('aria-roledescription'))")) == {"etapa"}
+    # > Un estado degradado simulado también llega al lienzo; de vuelta al backend real, se restaura.
+    discrepant = {"events": run(*DEMO, run_id=OTHER), "returned": 12, "skipped_lines": 0, "last_run_id": OTHER}
+    page.route("**/api/v1/pipeline*", simulated_error(200, json.dumps(discrepant)))
+    page.locator("#ops-refresh").click()
+    expect(page.locator('#ops-canvas [data-node="serve"]')).to_have_attribute("data-state", "mismatch")
+    expect(page.locator("#ops-flow-alerts")).to_contain_text("run_id discrepante")
+    page.unroute("**/api/v1/pipeline*")
+    page.locator("#ops-refresh").click()
+    expect(page.locator("#ops-flow-alerts li")).to_have_count(0)
+    expect(page.locator('#ops-canvas [data-node="serve"]')).to_have_attribute(
+        "data-state", expected_states(served["events"], served_run_id, health["status"])["serve"])
+    page.locator("#ops-view-list").click()
+    expect(page.locator("#ops-canvas")).to_be_hidden()
+    expect(page.locator("#ops-graph")).to_be_visible()
+
+
+def check_canvas_fallback(browser, url: str) -> None:
+    """Si React Flow no carga (fichero ausente o bloqueado), el panel vuelve a la lista y lo dice."""
+    page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    page.route("**/static/vendor/xyflow-react.umd.js", lambda route: route.fulfill(status=404, body=""))
+    page.goto(url)
+    expect(page.locator("#ops-graph .flow-node")).to_have_count(len(FLOW))
+    page.locator("#ops-view-canvas").click()
+    expect(page.locator("#ops-canvas-note")).to_have_text("No se pudo cargar el lienzo interactivo; se muestra la lista.")
+    expect(page.locator("#ops-view-list")).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#ops-graph")).to_be_visible()
+    expect(page.locator("#ops-canvas")).to_be_hidden()
+    page.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url")
@@ -258,6 +341,8 @@ def main() -> None:
                     expect(page.locator("#ops-graph-detail .flow-events li")).to_have_count(max(count, 1))
             check_flow_keyboard(page)
             check_flow_ui(page, args.url, payload["run_id"])
+            check_flow_canvas(page, args.url, payload["run_id"])
+            check_canvas_fallback(browser, args.url)
         check_flow_model(page)
         # > Rama «Degradado (200)» (R9) con /health simulado en el navegador: en CI la salud real siempre
         #   está en «ready» (mock), así que sin esto nadie comprobaría cómo se ve la IA en fallo.
@@ -337,6 +422,28 @@ def main() -> None:
         check_flow_keyboard(page)
         if args.screenshot:
             page.locator("#ops").screenshot(path=str(args.screenshot.with_name("operacion-390.png")))
+        # Móvil, lienzo: una columna dentro de la pantalla, sin scroll horizontal y sin atrapar el desplazamiento.
+        page.locator("#ops-view-canvas").click()
+        canvas = page.locator("#ops-canvas .react-flow__node")
+        expect(canvas).to_have_count(len(FLOW))
+        expect(page.locator("#ops-canvas .rf-wrap")).to_have_attribute("data-mode", "column")
+        # > Se mide cuando termina el encuadre (fitView): durante el primer fotograma los nodos aún no escalan juntos.
+        page.wait_for_function("() => { const view = document.querySelector('#ops-canvas .react-flow__viewport')"
+                               ".style.transform; const xs = [...document.querySelectorAll('#ops-canvas"
+                               " .react-flow__node')].map(n => Math.round(n.getBoundingClientRect().x));"
+                               " const stable = window.__rfView === view; window.__rfView = view;"
+                               " return stable && xs.length === 8 && new Set(xs).size === 1; }",
+                               polling=250, timeout=5000)
+        boxes = [box for box in (node.bounding_box() for node in canvas.all()) if box is not None]
+        assert len(boxes) == len(FLOW)
+        assert len({round(box["x"]) for box in boxes}) == 1, ("El lienzo no está en una columna a 390 px", boxes)
+        assert all(box["x"] >= 0 and box["x"] + box["width"] <= 390 for box in boxes)
+        assert page.locator("body").evaluate("(body) => body.scrollWidth") <= 390
+        # > Sin atrapar el desplazamiento: sobre el lienzo, el dedo mueve la página en vertical.
+        assert page.locator("#ops-canvas .react-flow__pane").evaluate("pane => getComputedStyle(pane).touchAction") == "pan-y"
+        if args.screenshot:
+            page.locator("#ops-canvas").screenshot(path=str(args.screenshot.with_name("operacion-lienzo-390.png")))
+        page.locator("#ops-view-list").click()
         assert page.evaluate("window.__cspViolations") == [], page.evaluate("window.__cspViolations")
         # Los errores simulados (503 y 429 del análisis; 404 y 503 del journal) registran un error de recurso
         # en consola; son los únicos admitidos.
@@ -346,8 +453,9 @@ def main() -> None:
                                  for path, codes in allowed.items())]
         assert unexpected == [], unexpected
         browser.close()
-    print("OK · API, salud y operación, grafo del lote (estados reales, degradados, teclado y CSP), datos de"
-          " entrada, análisis y su error, ranking, filtro, cortes y móvil a 390 px")
+    print("OK · API, salud y operación, grafo del lote (estados reales, degradados, teclado y CSP), lienzo de"
+          " React Flow (mismos estados, teclado, degradado, vuelta a la lista si no carga), datos de entrada,"
+          " análisis y su error, ranking, filtro, cortes y móvil a 390 px")
 
 
 if __name__ == "__main__":

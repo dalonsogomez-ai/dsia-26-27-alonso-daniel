@@ -143,8 +143,14 @@
       <h3 class="subhead">Último lote</h3>
       <p id="ops-pipeline-note" class="note"></p>
       <div class="flow">
+        <div class="flow-views" role="group" aria-label="Vista del grafo">
+          <button type="button" id="ops-view-list" aria-pressed="true" aria-controls="ops-graph">Lista</button>
+          <button type="button" id="ops-view-canvas" aria-pressed="false" aria-controls="ops-canvas">Lienzo interactivo</button>
+          <span id="ops-canvas-note" class="note" aria-live="polite"></span>
+        </div>
         <p id="ops-flow-help" class="note">Recorre las etapas con las flechas, Inicio y Fin; Intro o Espacio abre el detalle de los eventos observados.</p>
         <ol id="ops-graph" class="flow-graph" role="list" aria-label="Etapas del último lote, de los datos al servicio" aria-describedby="ops-flow-help"></ol>
+        <div id="ops-canvas" class="flow-canvas" role="region" aria-label="Lienzo interactivo del último lote (React Flow)" aria-describedby="ops-flow-help" hidden></div>
         <ul id="ops-flow-alerts" class="flow-alerts" role="list" aria-live="polite"></ul>
         <div id="ops-graph-detail" class="flow-detail" aria-live="polite">
           <p class="note">Elige una etapa para ver sus eventos.</p>

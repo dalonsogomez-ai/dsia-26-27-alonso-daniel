@@ -182,6 +182,43 @@ dd { margin: 0; }
 .flow-events { margin: .4rem 0 0; padding-left: 1.1rem; }
 .flow-events li { margin-top: .2rem; }
 
+/* Selector de vista y lienzo de React Flow (vendor/xyflow-react.css se carga antes, al abrir el lienzo) */
+.flow-graph[hidden], .flow-canvas[hidden] { display: none; }
+.flow-views { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .6rem; margin: .4rem 0 .5rem; }
+.flow-views button { padding: .4rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--raise); color: var(--ink); font: inherit; font-size: .84rem; font-weight: 600; cursor: pointer; }
+.flow-views button:hover { border-color: var(--accent); }
+.flow-views button[aria-pressed="true"] { border-color: var(--accent); background: rgba(46, 230, 197, .14); color: var(--accent); }
+.flow-views button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.flow-views .note { margin: 0; font-size: .8rem; }
+.flow-canvas { margin-top: .7rem; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel-solid); }
+.rf-wrap { height: 380px; }
+.rf-wrap[data-mode="column"] { height: 940px; }
+/* > En una columna el lienzo no se arrastra: el dedo desplaza la página (React Flow fija touch-action: none). */
+.rf-wrap[data-mode="column"] .react-flow__pane, .rf-wrap[data-mode="column"] .react-flow__node { touch-action: pan-y; }
+.flow-canvas .react-flow {
+  --xy-background-color: var(--panel-solid);
+  --xy-background-pattern-color: var(--line);
+  --xy-edge-stroke: var(--line);
+  --xy-edge-stroke-width: 2.4;
+  --xy-controls-button-background-color: var(--panel-solid);
+  --xy-controls-button-background-color-hover: rgba(255, 255, 255, .07);
+  --xy-controls-button-color: var(--ink);
+  --xy-controls-button-color-hover: var(--ink);
+  --xy-controls-button-border-color: var(--line);
+  --xy-attribution-background-color: transparent;
+}
+.flow-canvas .react-flow__attribution a { color: var(--muted); }
+.flow-canvas .react-flow__handle { opacity: 0; pointer-events: none; }
+.flow-canvas .react-flow__node-stage { width: 170px; border-radius: 12px; }
+.flow-canvas .react-flow__node-stage .flow-node { cursor: pointer; }
+.flow-canvas .react-flow__node-stage[aria-current="true"] .flow-node { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.flow-canvas .react-flow__node-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.flow-canvas .react-flow__controls-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.flow-canvas .rf-edge-on .react-flow__edge-path { stroke: var(--accent); }
+.flow-canvas .rf-edge-bad .react-flow__edge-path { stroke: var(--loss); }
+.flow-canvas .rf-edge-warn .react-flow__edge-path { stroke: var(--accent-3); }
+.flow-canvas .rf-edge-off .react-flow__edge-path { stroke-dasharray: 3 6; }
+
 /* Detalles y procedencia */
 summary { font-weight: 700; cursor: pointer; }
 summary::marker { color: var(--accent); }

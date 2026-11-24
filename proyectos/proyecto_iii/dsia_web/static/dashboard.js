@@ -160,6 +160,14 @@ const FLOW_STATES = {
 };
 const OBSERVED = ["succeeded", "failed", "started", "serving", "degraded", "mismatch", "unverified"];
 let flowSelected = null;
+// > Vista del grafo: «list» (lista nativa, por defecto) o «canvas» (React Flow, cargado solo si se pide).
+let flowView = "list";
+let flowModel = null;
+// Orden de carga del lienzo: React, React DOM, el puente jsx-runtime y React Flow, todo desde 'self' por la CSP.
+const CANVAS_SCRIPTS = ["/static/vendor/react.production.min.js", "/static/vendor/react-dom.production.min.js",
+  "/static/jsx-runtime.js", "/static/vendor/xyflow-react.umd.js", "/static/flow_canvas.js"];
+const CANVAS_STYLE = "/static/vendor/xyflow-react.css";
+let canvasLoading = null;
 
 const flowIndex = stage => FLOW.findIndex(node => node.stages.includes(stage));
 
@@ -327,9 +335,85 @@ function selectFlowNode(model, id) {
     button.tabIndex = active ? 0 : -1;
   });
   renderFlowDetail(model);
+  if (flowView === "canvas") renderCanvas();
+}
+
+// Estado del conector que llega a un nodo; lo usan la lista (SVG) y el lienzo (React Flow).
+function edgeState(next) {
+  return ["failed", "mismatch", "down"].includes(next.state) ? "bad"
+    : ["started", "unverified", "degraded"].includes(next.state) ? "warn"
+      : OBSERVED.includes(next.state) ? "on" : "off";
+}
+
+function renderCanvas() {
+  if (!flowModel || !window.DSIAFlowCanvas) return;
+  window.DSIAFlowCanvas.render(document.getElementById("ops-canvas"), flowModel, {
+    selected: flowSelected, labels: FLOW_STATES, summary: nodeSummary, edgeState,
+    onSelect: id => selectFlowNode(flowModel, id),
+  });
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    // > Una petición colgada (no fallida) no dispara onerror: 10 s y se da por fallida.
+    const timer = setTimeout(() => reject(new Error(`Tiempo agotado al cargar ${src}`)), 10000);
+    script.onload = () => { clearTimeout(timer); resolve(); };
+    script.onerror = () => { clearTimeout(timer); reject(new Error(`No se pudo cargar ${src}`)); };
+    document.head.append(script);
+  });
+}
+
+function loadCanvas() {
+  // > Carga diferida: los ~110 KB gzip de React y React Flow solo se piden al abrir el lienzo, una vez.
+  if (!canvasLoading) {
+    if (!document.querySelector(`link[href="${CANVAS_STYLE}"]`)) {
+      const style = document.createElement("link");
+      style.rel = "stylesheet";
+      style.href = CANVAS_STYLE;
+      document.head.prepend(style);
+    }
+    canvasLoading = CANVAS_SCRIPTS.reduce((chain, src) => chain.then(() => loadScript(src)), Promise.resolve());
+    canvasLoading.catch(() => { canvasLoading = null; });
+  }
+  return canvasLoading;
+}
+
+function showFlowView(view) {
+  flowView = view;
+  document.getElementById("ops-view-list").setAttribute("aria-pressed", String(view === "list"));
+  document.getElementById("ops-view-canvas").setAttribute("aria-pressed", String(view === "canvas"));
+  document.getElementById("ops-graph").hidden = view === "canvas";
+  document.getElementById("ops-canvas").hidden = view !== "canvas";
+}
+
+async function setFlowView(view) {
+  const note = document.getElementById("ops-canvas-note");
+  if (view === "list") {
+    showFlowView("list");
+    note.textContent = "";
+    return;
+  }
+  // > La lista sigue a la vista mientras carga el lienzo: el grafo nunca queda vacío.
+  flowView = "loading";
+  note.textContent = "Cargando el lienzo…";
+  try {
+    await loadCanvas();
+    if (!window.DSIAFlowCanvas) throw new Error("flow_canvas.js no definió DSIAFlowCanvas");
+    if (flowView !== "loading") return;  // > Se volvió a «Lista» mientras cargaba.
+    showFlowView("canvas");
+    renderCanvas();
+    note.textContent = "Lienzo cargado. En pantallas anchas se arrastra el fondo y los botones acercan, alejan o encajan el grafo.";
+  } catch {
+    if (flowView !== "loading") return;
+    showFlowView("list");
+    note.textContent = "No se pudo cargar el lienzo interactivo; se muestra la lista.";
+  }
 }
 
 function renderFlow(model) {
+  flowModel = model;
   const graph = document.getElementById("ops-graph");
   const hadFocus = graph.contains(document.activeElement) ? document.activeElement.dataset.node : null;
   if (!model.nodes.some(node => node.id === flowSelected)) flowSelected = null;
@@ -355,9 +439,7 @@ function renderFlow(model) {
       edge.setAttribute("viewBox", "0 0 24 24");
       edge.setAttribute("aria-hidden", "true");
       edge.setAttribute("class", "edge");
-      edge.dataset.state = ["failed", "mismatch", "down"].includes(next.state) ? "bad"
-        : ["started", "unverified", "degraded"].includes(next.state) ? "warn"
-          : OBSERVED.includes(next.state) ? "on" : "off";
+      edge.dataset.state = edgeState(next);
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", "M2 12h18M14 6l6 6-6 6");
       edge.append(path);
@@ -369,7 +451,11 @@ function renderFlow(model) {
   replaceIfChanged(document.getElementById("ops-flow-alerts"), model.alerts.map(alert => element("li", alert)));
   renderFlowDetail(model);
   if (hadFocus) graph.querySelector(`[data-node="${hadFocus}"]`)?.focus();
+  if (flowView === "canvas") renderCanvas();
 }
+
+document.getElementById("ops-view-list").addEventListener("click", () => setFlowView("list"));
+document.getElementById("ops-view-canvas").addEventListener("click", () => setFlowView("canvas"));
 
 document.getElementById("ops-graph").addEventListener("keydown", event => {
   const buttons = [...event.currentTarget.querySelectorAll(".flow-node")];
