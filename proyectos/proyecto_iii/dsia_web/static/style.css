@@ -149,6 +149,38 @@ dd { margin: 0; }
 .ops-facts dd.build { margin-top: .35rem; color: var(--muted); font-weight: 500; }
 .mono { font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace !important; }
 .subhead { margin: 0; font-size: 1rem; }
+.subhead + .table-wrap { margin-top: .4rem; }
+
+/* Grafo del lote: lista ordenada de botones (HTML) con conectores SVG decorativos */
+.flow { margin: .6rem 0 1.3rem; }
+.flow-graph { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: .6rem 1.15rem; margin: .7rem 0 0; padding: 0; list-style: none; }
+.flow-graph li { position: relative; display: flex; min-width: 0; }
+.flow-node { display: flex; flex-direction: column; gap: .15rem; width: 100%; min-width: 0; padding: .6rem .6rem .65rem; border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 12px; background: var(--raise); color: var(--ink); font-size: .84rem; font-weight: 650; text-align: left; }
+.flow-node:hover { background: rgba(255, 255, 255, .07); }
+.flow-step { color: var(--muted); font-size: .7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.flow-label { overflow-wrap: anywhere; }
+.flow-state { color: var(--muted); font-size: .74rem; font-weight: 500; overflow-wrap: anywhere; }
+.flow-node[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.flow-node[data-state="succeeded"], .flow-node[data-state="serving"] { border-left-color: var(--accent); }
+.flow-node[data-state="failed"], .flow-node[data-state="mismatch"], .flow-node[data-state="down"] { border-left-color: var(--loss); }
+.flow-node[data-state="failed"] .flow-state, .flow-node[data-state="mismatch"] .flow-state, .flow-node[data-state="down"] .flow-state { color: var(--loss); }
+.flow-node[data-state="started"], .flow-node[data-state="truncated"], .flow-node[data-state="unverified"], .flow-node[data-state="degraded"] { border-left-color: var(--accent-3); }
+.flow-node[data-state="started"] .flow-state, .flow-node[data-state="truncated"] .flow-state, .flow-node[data-state="unverified"] .flow-state, .flow-node[data-state="degraded"] .flow-state { color: var(--accent-3); }
+.flow-node[data-state="skipped"], .flow-node[data-state="reused"], .flow-node[data-state="unreached"], .flow-node[data-state="pending"], .flow-node[data-state="unknown"] { border-style: dashed; border-left-style: solid; }
+.flow-node[data-state="reused"] { border-left-color: var(--accent-2); }
+.edge { position: absolute; top: 50%; right: -1.1rem; width: 1.05rem; height: 1.05rem; transform: translateY(-50%); pointer-events: none; }
+.edge path { fill: none; stroke: var(--line); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.edge[data-state="on"] path { stroke: var(--accent); }
+.edge[data-state="bad"] path { stroke: var(--loss); }
+.edge[data-state="warn"] path { stroke: var(--accent-3); }
+.flow-node:focus-visible { border-radius: 12px; }
+.flow-alerts { margin: .7rem 0 0; padding: 0; list-style: none; }
+.flow-alerts li { margin-top: .35rem; padding: .45rem .75rem; border-left: 3px solid var(--accent-3); border-radius: 8px; background: rgba(255, 181, 71, .08); color: var(--accent-3); font-size: .86rem; overflow-wrap: anywhere; }
+.flow-detail { margin-top: .8rem; padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--raise); overflow-wrap: anywhere; }
+.flow-detail h4 { margin: 0 0 .3rem; font-size: .95rem; }
+.flow-detail p { margin: .2rem 0; }
+.flow-events { margin: .4rem 0 0; padding-left: 1.1rem; }
+.flow-events li { margin-top: .2rem; }
 
 /* Detalles y procedencia */
 summary { font-weight: 700; cursor: pointer; }
@@ -169,6 +201,15 @@ summary::marker { color: var(--accent); }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } html { scroll-behavior: auto; } }
 
+@media (max-width: 1100px) {
+  .flow-graph { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .flow-graph li:nth-child(4n) .edge { display: none; }
+}
+@media (max-width: 560px) {
+  .flow-graph { grid-template-columns: 1fr; row-gap: 1.1rem; }
+  .flow-graph li:nth-child(4n) .edge { display: block; }
+  .edge { top: auto; right: auto; bottom: -1.1rem; left: 1.4rem; transform: rotate(90deg); }
+}
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; }

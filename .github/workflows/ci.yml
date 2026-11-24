@@ -145,6 +145,7 @@ jobs:
           name: dsia-dashboard-sintetico
           path: |
             runs/dsia-evidence/dashboard.png
+            runs/dsia-evidence/operacion-390.png
             runs/dsia-evidence/pipeline.jsonl
           if-no-files-found: error
           retention-days: 30

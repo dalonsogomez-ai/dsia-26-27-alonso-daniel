@@ -43,6 +43,12 @@ def test_dashboard_consumes_operation_and_analysis_endpoints_without_inline_code
     assert 'id="ops-ai"' in page and '"ops-ai"' in script
     for field in ('"degraded"', "ai_provider", "ai_config", "ai_last_call"):
         assert field in script
+    # > Grafo del lote en Operación: lista ordenada navegable, panel de detalle y la tabla de eventos se mantiene.
+    for anchor in ('<ol id="ops-graph"', 'id="ops-graph-detail"', 'id="ops-flow-alerts"', 'id="ops-events"'):
+        assert anchor in page
+    for name in ("function pipelineModel", '"generate_bars", "download_bars"', '"publish_snapshot"',
+                 "ArrowRight: 1", '"Home"', '"End"', "aria-current"):
+        assert name in script
     # > La CSP default-src 'self' bloquearía cualquier script, estilo o manejador inline.
     assert "<script>" not in page and "<style" not in page and " style=" not in page
     assert " on" + "click=" not in page and " on" + "submit=" not in page

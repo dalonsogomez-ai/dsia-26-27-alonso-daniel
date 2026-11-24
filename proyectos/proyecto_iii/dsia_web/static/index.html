@@ -142,6 +142,15 @@
       </dl>
       <h3 class="subhead">Último lote</h3>
       <p id="ops-pipeline-note" class="note"></p>
+      <div class="flow">
+        <p id="ops-flow-help" class="note">Recorre las etapas con las flechas, Inicio y Fin; Intro o Espacio abre el detalle de los eventos observados.</p>
+        <ol id="ops-graph" class="flow-graph" role="list" aria-label="Etapas del último lote, de los datos al servicio" aria-describedby="ops-flow-help"></ol>
+        <ul id="ops-flow-alerts" class="flow-alerts" role="list" aria-live="polite"></ul>
+        <div id="ops-graph-detail" class="flow-detail" aria-live="polite">
+          <p class="note">Elige una etapa para ver sus eventos.</p>
+        </div>
+      </div>
+      <h3 class="subhead">Eventos del journal</h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th scope="col">Etapa</th><th scope="col">Estado</th><th scope="col">Duración</th><th scope="col">Hora UTC</th></tr></thead>

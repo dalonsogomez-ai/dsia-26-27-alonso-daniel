@@ -17,6 +17,175 @@ def simulated_error(status: int, body: str):
                                        headers={"Retry-After": "42"}, body=body)
 
 
+# Topología fija del grafo de Operación (misma que FLOW en dashboard.js): nodo -> etapas del journal.
+FLOW = {"source": ("generate_bars", "download_bars"), "validate_input": ("validate_input",),
+        "prepare": ("prepare",), "train": ("train",), "holdout": ("holdout",),
+        "infer_snapshot": ("infer_snapshot",), "publish_snapshot": ("publish_snapshot",), "serve": ()}
+RUN = "a" * 64
+OTHER = "b" * 64
+
+
+def ev(stage: str, status: str, **extra) -> dict:
+    return {"timestamp": "2026-11-24T10:00:00+00:00", "stage": stage, "status": status, **extra}
+
+
+def run(*stages: str, run_id: str = RUN, last: str = "succeeded") -> list[dict]:
+    """Eventos started/succeeded de cada etapa; la última termina en ``last``."""
+    events = []
+    for position, stage in enumerate(stages):
+        extra = {"run_id": run_id} if stage == "publish_snapshot" else {}
+        events.append(ev(stage, "started", **extra))
+        status = last if position == len(stages) - 1 else "succeeded"
+        if status != "started":
+            events.append(ev(stage, status, duration_ms=1.0, **extra))
+    return events
+
+
+DEMO = ("generate_bars", "prepare", "train", "holdout", "infer_snapshot", "publish_snapshot")
+ALPACA = ("download_bars", "validate_input", "prepare", "train", "holdout", "infer_snapshot", "publish_snapshot")
+REFRESH = ("validate_input", "infer_snapshot", "publish_snapshot")
+# > Casos degradados del modelo del grafo: (nombre, entrada de pipelineModel, estados esperados de los 8 nodos,
+#   fragmento obligatorio en las alertas o None si no debe haber ninguna).
+FLOW_CASES = [
+    ("demo completa", {"journal": "ok", "events": run(*DEMO), "servedRunId": RUN, "health": "ready"},
+     ["succeeded", "skipped", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "serving"], None),
+    ("alpaca completa", {"journal": "ok", "events": run(*ALPACA), "servedRunId": RUN, "health": "ready"},
+     ["succeeded"] * 7 + ["serving"], None),
+    ("journal ausente", {"journal": "missing", "servedRunId": RUN, "health": "ready"},
+     ["unknown"] * 7 + ["unverified"], "Journal no configurado"),
+    ("journal ilegible", {"journal": "unavailable", "servedRunId": RUN, "health": "ready"},
+     ["unknown"] * 7 + ["unverified"], "Journal ilegible"),
+    ("líneas descartadas", {"journal": "ok", "events": run(*DEMO), "skipped": 2, "servedRunId": RUN,
+                            "health": "ready"},
+     ["succeeded", "skipped", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "serving"],
+     "2 líneas del journal"),
+    ("journal truncado", {"journal": "ok", "events": run(*ALPACA)[5:], "servedRunId": RUN, "health": "ready"},
+     ["truncated", "truncated", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "serving"],
+     "Lote truncado"),
+    ("run_id discrepante", {"journal": "ok", "events": run(*DEMO, run_id=OTHER), "servedRunId": RUN,
+                            "health": "ready"},
+     ["succeeded", "skipped", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "mismatch"],
+     "run_id discrepante"),
+    ("run_id desconocido", {"journal": "ok", "events": run(*DEMO[:-1]), "servedRunId": RUN, "health": "ready"},
+     ["succeeded", "skipped", "succeeded", "succeeded", "succeeded", "succeeded", "pending", "unverified"],
+     "run_id desconocido"),
+    ("publicación sin cierre", {"journal": "ok", "events": run(*DEMO, last="started"), "servedRunId": RUN,
+                                "health": "ready"},
+     ["succeeded", "skipped", "succeeded", "succeeded", "succeeded", "succeeded", "started", "unverified"],
+     "run_id desconocido"),
+    ("refresco de modelo entrenado", {"journal": "ok", "events": run(*REFRESH), "servedRunId": RUN,
+                                      "health": "ready"},
+     ["skipped", "succeeded", "reused", "reused", "reused", "succeeded", "succeeded", "serving"], "Refresco"),
+    ("fallo al entrenar", {"journal": "ok", "events": run(*DEMO[:3], last="failed"), "servedRunId": RUN,
+                           "health": "degraded"},
+     ["succeeded", "skipped", "succeeded", "failed", "unreached", "unreached", "unreached", "unverified"],
+     "run_id desconocido"),
+    ("lote interrumpido", {"journal": "ok", "events": run(*DEMO[:3], last="started"), "servedRunId": RUN,
+                           "health": "ready"},
+     ["succeeded", "skipped", "succeeded", "started", "pending", "pending", "pending", "unverified"],
+     "run_id desconocido"),
+    ("dos lotes en la ventana", {"journal": "ok", "events": run(*DEMO, run_id=OTHER) + run(*REFRESH),
+                                 "servedRunId": RUN, "health": "degraded"},
+     ["skipped", "succeeded", "reused", "reused", "reused", "succeeded", "succeeded", "degraded"],
+     "lote anterior"),
+    ("refresco fallido en validate_input", {"journal": "ok", "events": run(*REFRESH[:1], last="failed"),
+                                            "servedRunId": RUN, "health": "ready"},
+     ["skipped", "failed", "unreached", "unreached", "unreached", "unreached", "unreached", "unverified"],
+     "run_id desconocido"),
+    ("sin snapshot servido", {"journal": "ok", "events": run(*DEMO), "servedRunId": None, "health": "unavailable"},
+     ["succeeded", "skipped", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "down"], None),
+]
+
+
+def expected_states(events: list[dict], served_run_id: str, health_status: str) -> dict[str, str]:
+    """Estado esperado de cada nodo observado según los eventos reales del backend (último evento de la etapa)."""
+    states = {}
+    for node, stages in FLOW.items():
+        seen = [event for event in events if event["stage"] in stages]
+        if seen:
+            states[node] = seen[-1]["status"]
+    published = [event["run_id"] for event in events if event["stage"] == "publish_snapshot"
+                 and event["status"] == "succeeded" and "run_id" in event]
+    serving = "degraded" if health_status == "degraded" else "serving"
+    states["serve"] = ("unverified" if not published else serving if published[-1] == served_run_id
+                       else "mismatch")
+    return states
+
+
+def check_real_states(page, url: str, run_id: str) -> None:
+    """Cada nodo con el estado del último evento real de su etapa; Servir API según /health y el journal."""
+    served = page.request.get(urljoin(url, "/api/v1/pipeline?limit=20")).json()
+    health = page.request.get(urljoin(url, "/health")).json()
+    nodes = page.locator("#ops-graph .flow-node")
+    expect(nodes).to_have_count(len(FLOW))
+    assert nodes.evaluate_all("nodes => nodes.map(n => n.dataset.node)") == list(FLOW)
+    for node, state in expected_states(served["events"], run_id, health["status"]).items():
+        expect(page.locator(f'#ops-graph [data-node="{node}"]')).to_have_attribute("data-state", state)
+
+
+def check_flow_model(page) -> None:
+    for name, payload, states, alert in FLOW_CASES:
+        model = page.evaluate("input => pipelineModel(input)", payload)
+        got = [node["state"] for node in model["nodes"]]
+        assert [node["id"] for node in model["nodes"]] == list(FLOW), name
+        assert got == states, (name, got)
+        alerts = " ".join(model["alerts"])
+        assert (alert in alerts) if alert else not alerts, (name, model["alerts"])
+        # > El aviso de refresco solo aparece si de verdad hay etapas reutilizadas.
+        assert ("Refresco" in alerts) == ("reused" in states), (name, model["alerts"])
+
+
+def check_flow_ui(page, url: str, served_run_id: str) -> None:
+    """Estados degradados pintados en el navegador con /api/v1/pipeline simulado (no toca el backend)."""
+    graph = page.locator("#ops-graph .flow-node")
+    simulated = [
+        ("journal ausente", 404, {"error": "journal_not_configured"}, "unknown", "Journal no configurado",
+         "unverified"),
+        ("journal ilegible", 503, {"error": "journal_unavailable"}, "unknown", "Journal ilegible", "unverified"),
+        ("truncado", 200, {"events": run(*ALPACA)[5:], "returned": 9, "skipped_lines": 1,
+                           "last_run_id": served_run_id}, "truncated", "Lote truncado", None),
+        ("discrepante", 200, {"events": run(*DEMO, run_id=OTHER), "returned": 12, "skipped_lines": 0,
+                              "last_run_id": OTHER}, "succeeded", "run_id discrepante", "mismatch"),
+        ("refresco", 200, {"events": run(*REFRESH, run_id=served_run_id), "returned": 6, "skipped_lines": 0,
+                           "last_run_id": served_run_id}, "skipped", "Refresco", None),
+    ]
+    for name, status, body, first_state, alert, serve in simulated:
+        page.route("**/api/v1/pipeline*", simulated_error(status, json.dumps(body)))
+        page.locator("#ops-refresh").click()
+        expect(page.locator("#ops-flow-alerts")).to_contain_text(alert)
+        expect(graph).to_have_count(len(FLOW))
+        expect(graph.first).to_have_attribute("data-state", first_state)
+        if serve:
+            expect(page.locator('#ops-graph [data-node="serve"]')).to_have_attribute("data-state", serve)
+        page.unroute("**/api/v1/pipeline*")
+    # > De vuelta al backend real: estados restaurados y sin avisos (el lote demo completo no tiene ninguno).
+    page.locator("#ops-refresh").click()
+    expect(page.locator("#ops-flow-alerts li")).to_have_count(0)
+    check_real_states(page, url, served_run_id)
+
+
+def check_flow_keyboard(page) -> None:
+    graph = page.locator("#ops-graph .flow-node")
+    # > Una sola parada de tabulación para el grafo (tabindex itinerante) y flechas dentro.
+    assert graph.evaluate_all("nodes => nodes.filter(n => n.tabIndex === 0).length") == 1
+    graph.first.focus()
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#ops-graph .flow-node:focus")).to_have_attribute("data-node", "validate_input")
+    page.keyboard.press("End")
+    expect(page.locator("#ops-graph .flow-node:focus")).to_have_attribute("data-node", "serve")
+    page.keyboard.press("Home")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Enter")
+    expect(page.locator('#ops-graph [data-node="prepare"]')).to_have_attribute("aria-current", "true")
+    expect(page.locator("#ops-graph-detail")).to_contain_text("Preparar")
+    page.keyboard.press("End")
+    page.keyboard.press("Space")
+    expect(page.locator("#ops-graph-detail")).to_contain_text("run_id servido")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url")
@@ -31,6 +200,10 @@ def main() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=args.chrome)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        # > Registro explícito de violaciones de CSP en Chromium, además de los errores de consola.
+        page.add_init_script("window.__cspViolations = [];"
+                             "document.addEventListener('securitypolicyviolation',"
+                             " e => window.__cspViolations.push(e.violatedDirective + ' ' + e.blockedURI));")
         errors = []
         page.on("pageerror", lambda error: errors.append((str(error), "")))
         # > Las violaciones de CSP llegan como errores de consola, no como pageerror.
@@ -76,6 +249,16 @@ def main() -> None:
             expect(page.locator("#ops-pipeline-note")).to_have_attribute("data-run-id", payload["run_id"])
             if final is not None:
                 assert served["events"][-1] == {key: final[key] for key in served["events"][-1]}
+            # Grafo: topología fija y estado de cada nodo igual al último evento real de su etapa.
+            check_real_states(page, args.url, payload["run_id"])
+            for node, stages in FLOW.items():
+                if stages:
+                    page.locator(f'#ops-graph [data-node="{node}"]').click()
+                    count = sum(event["stage"] in stages for event in served["events"])
+                    expect(page.locator("#ops-graph-detail .flow-events li")).to_have_count(max(count, 1))
+            check_flow_keyboard(page)
+            check_flow_ui(page, args.url, payload["run_id"])
+        check_flow_model(page)
         # > Rama «Degradado (200)» (R9) con /health simulado en el navegador: en CI la salud real siempre
         #   está en «ready» (mock), así que sin esto nadie comprobaría cómo se ve la IA en fallo.
         degraded = {**build, "status": "degraded",
@@ -137,14 +320,34 @@ def main() -> None:
         expect(page.locator("#splits tr")).to_have_count(3)
         if args.screenshot:
             page.screenshot(path=str(args.screenshot), full_page=True)
+        # Tableta: 4 columnas, con el conector del final de cada fila oculto.
+        page.set_viewport_size({"width": 900, "height": 900})
+        columns = {round(node.bounding_box()["x"]) for node in page.locator("#ops-graph .flow-node").all()}
+        assert len(columns) == 4, columns
+        assert page.locator("#ops-graph li:nth-child(4) .edge").is_hidden()
         page.set_viewport_size({"width": 390, "height": 840})
         assert page.locator("body").evaluate("(body) => body.scrollWidth") <= 390
-        # El 503 y el 429 simulados del análisis registran un error de recurso en consola; son los únicos admitidos.
+        # Móvil: el grafo pasa a una columna, cada nodo cabe en pantalla y sigue navegable con teclado.
+        boxes = [box for box in (node.bounding_box() for node in page.locator("#ops-graph .flow-node").all())
+                 if box is not None]
+        assert len(boxes) == len(FLOW)
+        assert len({round(box["x"]) for box in boxes}) == 1, "El grafo no está en una columna a 390 px"
+        assert all(box["x"] >= 0 and box["x"] + box["width"] <= 390 for box in boxes)
+        assert all(earlier["y"] < later["y"] for earlier, later in zip(boxes, boxes[1:]))
+        check_flow_keyboard(page)
+        if args.screenshot:
+            page.locator("#ops").screenshot(path=str(args.screenshot.with_name("operacion-390.png")))
+        assert page.evaluate("window.__cspViolations") == [], page.evaluate("window.__cspViolations")
+        # Los errores simulados (503 y 429 del análisis; 404 y 503 del journal) registran un error de recurso
+        # en consola; son los únicos admitidos.
+        allowed = {"/api/v1/analyze": ("503", "429"), "/api/v1/pipeline?limit=20": ("404", "503")}
         unexpected = [text for text, url in errors
-                      if not (("503" in text or "429" in text) and url.endswith("/api/v1/analyze"))]
+                      if not any(url.endswith(path) and any(code in text for code in codes)
+                                 for path, codes in allowed.items())]
         assert unexpected == [], unexpected
         browser.close()
-    print("OK · API, salud y operación, datos de entrada, análisis y su error, ranking, filtro, cortes y móvil")
+    print("OK · API, salud y operación, grafo del lote (estados reales, degradados, teclado y CSP), datos de"
+          " entrada, análisis y su error, ranking, filtro, cortes y móvil a 390 px")
 
 
 if __name__ == "__main__":
