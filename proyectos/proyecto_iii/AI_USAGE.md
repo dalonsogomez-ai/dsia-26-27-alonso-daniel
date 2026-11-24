@@ -192,4 +192,14 @@
 - **Verificación:** respuestas guardadas de los GET y del análisis (200 en 21,9 s, `latency_ms` 21 694, `request_id` devuelto); `used_today` de 0 a 1 y la ruta `/api/v1/analyze` con un 200 en `requests`. Después, a petición del autor, el log de Render leído con el MCP de Render en su único workspace, solo lectura: la línea `IA provider=nvidia … attempt=1 request_id=ipcheck-analyze-0001` del cliente del II en INFO, junto a las de `analyze` y `request` del III, todas sin la IP.
 - **Commit:** el que añade esta entrada.
 
+## 2026-11-24 — Lienzo interactivo con React Flow en el panel Operación
+
+- **Herramienta:** Claude Code · **modelo:** Claude Opus 5.5
+- **Objetivo:** añadir, a petición del autor, el grafo del lote con React Flow como vista adicional en Render, sin romper ningún requisito de los README de los proyectos I, II y III del profesor («FastAPI+HTML/HTMX… o equivalente documentado», evidencia de que el dashboard consume el backend real, pruebas, CI y citas de IA).
+- **Prompts (resumen):** releer los tres README del profesor en `b76b950` → documentación oficial de React Flow (accesibilidad, `ariaLabelConfig`, `domAttributes`) → vendor reproducible con lockfile → vista con carga diferida que reutiliza `pipelineModel` → pruebas y smoke de Chromium → sabotajes → revisión independiente.
+- **Aceptado:** React Flow 12.12.1 y React 18.3.1 en UMD desde `static/vendor` (sin CDN, por la CSP); carga diferida y vuelta a la lista si falla; la lista nativa como vista predeterminada; tabindex itinerante movido en el DOM; devolver a React Flow las medidas que notifica (en modo controlado, sin ellas cada nodo nuevo se ocultaba al elegir una etapa y perdía el foco: lo destapó el smoke); medir el ancho antes de pintar al volver a mostrar el lienzo (oculto mide 0 y a 390 px se veía un fotograma de 4 + 4 fuera de pantalla); textos de accesibilidad en español.
+- **Rechazado:** sustituir la lista (pierde la vista sin dependencias y más accesible); CDN (bloqueada por `default-src 'self'`); un bundler o una etapa Node en el `Dockerfile` (los UMD de npm ya sirven tal cual); React Flow 13.x (13.0.3 del 23/11/2026, demasiado reciente).
+- **Verificación:** I 178 passed y 99,31 %, Tema 2 7 passed, II 197 passed y 86,50 %, III 301 passed y 98,25 %; `browser_smoke.py --expect-pipeline` 3 de 3 contra Uvicorn y contra la imagen Docker (`healthy` en 6 s); vendor reproducido byte a byte desde el lockfile y `npm audit` sin vulnerabilidades; 6 sabotajes en rojo.
+- **Commit:** [b792c64](https://github.com/dalonsogomez-ai/dsia-26-27-alonso-daniel/commit/b792c64).
+
 `>>` [Arquitectura](../../docs/ARQUITECTURA_DSIA.md) · [Uso de IA del Proyecto II](../proyecto_ii/AI_USAGE.md) · [Uso de IA en los ficheros comunes](../../docs/AI_USAGE.md) · [RC](RELEASE.md)
