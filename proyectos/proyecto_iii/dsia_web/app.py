@@ -29,7 +29,8 @@ from swarmtrade_app.ai_client import AIClient, AIClientError, AnalysisRequest, p
 from . import __version__
 from .ai import client_from_env
 from .journal import read_recent_events
-from .observability import ObservabilityMiddleware, RequestMetrics, request_id
+from .observability import (ObservabilityMiddleware, RequestMetrics, install_request_id_filter, mark_error_logged,
+                            request_id, route_logs_to_uvicorn)
 from .snapshot import Prediction, Snapshot, read_snapshot
 
 LOG = logging.getLogger("uvicorn.error").getChild("dsia")
@@ -174,6 +175,9 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
                metrics_clock: Callable[[], float] = monotonic) -> Starlette:
     @asynccontextmanager
     async def lifespan(app: Starlette):
+        # > R11: en el arranque Uvicorn ya configuró su logging (también con uvicorn.run): las líneas del
+        #   cliente del II salen por su handler si el root no tiene ninguno.
+        route_logs_to_uvicorn()
         app.state.build = {"version": __version__, "commit": deployed_commit(os.environ)}
         # > Proveedor declarado (AI_PROVIDER normalizado como en el II); /health no llama al proveedor.
         #   Uno desconocido se publica como «invalid» y en el log solo su longitud: /health es público y
@@ -193,7 +197,8 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         try:
             snapshot = read_snapshot(path)
         except (OSError, ValueError) as error:
-            LOG.warning("snapshot_unavailable error_type=%s", type(error).__name__)
+            # > Sin informe válido el servicio no sirve nada (/health en 503): es un ERROR, no un aviso.
+            LOG.error("snapshot_unavailable error_type=%s", type(error).__name__)
         else:
             app.state.snapshot = snapshot
             LOG.info("snapshot_ready run_id=%s as_of=%s kind=%s symbols=%s",
@@ -301,6 +306,7 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
             # > Fallo externo => ERROR con request_id, proveedor, kind y latencia; ni el mensaje ni claves.
             LOG.error("analyze_failed request_id=%s provider=%s kind=%s status=%d code=%s latency_ms=%.2f",
                       rid, provider, exc.kind, status, code, (perf_counter() - started) * 1000)
+            mark_error_logged(request.scope)  # > La línea request de este 5xx no repite el ERROR.
             return error_response(request, status, code, message)
         request.app.state.ai_last_call = "ok"
         latency_ms = round((perf_counter() - started) * 1000, 3)
@@ -328,7 +334,8 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         try:
             events, skipped = await run_in_threadpool(read_recent_events, journal, limit)
         except OSError as exc:
-            LOG.warning("journal_unavailable error_type=%s", type(exc).__name__)
+            LOG.warning("journal_unavailable request_id=%s error_type=%s", request_id(request.scope),
+                        type(exc).__name__)
             return error_response(request, 503, "journal_unavailable", "No se puede leer el journal del lote.")
         return JSONResponse({
             "events": events, "returned": len(events), "skipped_lines": skipped,
@@ -336,6 +343,7 @@ def create_app(snapshot_path: Path | None = None, *, journal_path: Path | None =
         }, headers={"Cache-Control": "no-store"})
 
     metrics = RequestMetrics(clock=metrics_clock)
+    install_request_id_filter()  # > R11: request_id también en las líneas «IA provider=…» del cliente del II.
     application = Starlette(lifespan=lifespan, routes=[
         Route("/", dashboard), Route("/health", health),
         Route("/api/v1/snapshot", report), Route("/api/v1/snapshot/schema", schema),

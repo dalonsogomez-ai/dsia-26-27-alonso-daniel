@@ -347,3 +347,94 @@ def test_analyze_request_is_logged_with_latency(demo_run, symbol, caplog):
     assert len(messages) == 1
     assert re.fullmatch(rf"analyze request_id=log-analisis symbol={re.escape(symbol.symbol)} provider=mock "
                         r"model=mock-determinista-v1 latency_ms=\d+\.\d{2}", messages[0])
+
+
+# --- R11: request_id en las líneas del cliente del II ----------------------------------------------
+
+def test_provider_attempt_and_retry_lines_carry_the_request_id(demo_run, symbol, monkeypatch, caplog):
+    class FailingNvidia:
+        def __init__(self, **kwargs):
+            pass
+
+        def chat_completion(self, **kwargs):
+            raise nvidia_failure(502)
+
+    monkeypatch.setenv("NVIDIA_API_KEY", NVIDIA_KEY)
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", FailingNvidia)
+    factory = lambda: AIClient("nvidia", sleep=lambda seconds: None)  # noqa: E731 - sin esperas reales
+    with caplog.at_level(logging.INFO):
+        with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=factory)) as client:
+            response = client.post(URL, json={"symbol": symbol.symbol}, headers={"X-Request-ID": "trazado-ia-01"})
+        AIClient("mock").analyze(analysis_request(demo_run.snapshot, symbol.symbol))
+    assert response.status_code == 503
+    lines = [record.getMessage() for record in caplog.records if record.name == "swarmtrade_app.ai_client"]
+    provider_lines = [line for line in lines if line.startswith("IA provider=nvidia")]
+    # > 3 intentos fallidos (WARNING) y 2 reintentos (INFO), todos con el request_id de la petición.
+    assert len(provider_lines) == 5
+    assert all(line.endswith(" request_id=trazado-ia-01") for line in provider_lines), provider_lines
+    # > Fuera de una petición (CLI, lote) la línea no cambia.
+    assert [line for line in lines if line.startswith("IA provider=mock")] == [
+        "IA provider=mock model=mock-determinista-v1 latency_ms=0 ai_status=completed"]
+    failed = [record.getMessage() for record in caplog.records if record.getMessage().startswith("analyze_failed")]
+    assert len(failed) == 1 and failed[0].startswith("analyze_failed request_id=trazado-ia-01 provider=nvidia ")
+    assert NVIDIA_KEY not in caplog.text
+
+
+def test_provider_lines_reach_uvicorn_handlers_when_the_root_logger_has_none(demo_run, symbol, monkeypatch, capfd):
+    # >> R11 en el despliegue: serve.py y el Procfile lanzan el CLI de Uvicorn, cuyo LOGGING_CONFIG solo da
+    #    handler a «uvicorn» y deja el root sin ninguno. Sin reenvío, las INFO del cliente del II se pierden y
+    #    las WARNING salen por logging.lastResort, sin nivel. caplog no lo ve: instala su handler en el root.
+    import logging.config
+
+    import uvicorn.config
+
+    class FailingNvidia:
+        def __init__(self, **kwargs):
+            pass
+
+        def chat_completion(self, **kwargs):
+            raise nvidia_failure(502)
+
+    monkeypatch.setenv("NVIDIA_API_KEY", NVIDIA_KEY)
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", FailingNvidia)
+    factory = lambda: AIClient("nvidia", sleep=lambda seconds: None)  # noqa: E731 - sin esperas reales
+    root = logging.getLogger()
+    names = ("", "uvicorn", "uvicorn.error", "uvicorn.access", "swarmtrade_app")
+    saved = {name: (logging.getLogger(name).handlers[:], logging.getLogger(name).level,
+                    logging.getLogger(name).propagate) for name in names}
+    try:
+        # > Mismo estado que un proceso nuevo de `uvicorn`: su configuración y el root sin handlers, en WARNING.
+        logging.config.dictConfig(uvicorn.config.LOGGING_CONFIG)
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+        root.setLevel(logging.WARNING)
+        with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=factory)) as client:
+            response = client.post(URL, json={"symbol": symbol.symbol}, headers={"X-Request-ID": "trazado-uvicorn-1"})
+    finally:
+        for name, (handlers, level, propagate) in saved.items():
+            logger = logging.getLogger(name)
+            for handler in logger.handlers[:]:
+                if handler not in handlers:
+                    logger.removeHandler(handler)
+                    handler.close()
+            for handler in handlers:
+                if handler not in logger.handlers:
+                    logger.addHandler(handler)
+            logger.setLevel(level)
+            logger.propagate = propagate
+    assert response.status_code == 503
+    err = capfd.readouterr().err
+    lines = [line for line in err.splitlines() if "IA provider=nvidia" in line]
+    attempts = [line for line in lines if "ai_status=failed" in line]
+    retries = [line for line in lines if " reintento=" in line]
+
+    def level(line):
+        return (re.match(r"([A-Z]+): ", line) or [None, None])[1]  # > None = sin prefijo (lastResort)
+
+    # > Los 3 intentos (WARNING) y los 2 reintentos (INFO) salen con el formato de Uvicorn y el request_id.
+    assert [level(line) for line in attempts] == ["WARNING"] * 3, err
+    assert [level(line) for line in retries] == ["INFO"] * 2, err
+    assert [re.search(r" attempt=(\d)", line).group(1) for line in attempts] == ["1", "2", "3"]
+    assert all(line.endswith(" request_id=trazado-uvicorn-1") for line in attempts + retries), lines
+    assert re.search(r"^ERROR: +analyze_failed request_id=trazado-uvicorn-1 provider=nvidia ", err, re.M)
+    assert NVIDIA_KEY not in err
