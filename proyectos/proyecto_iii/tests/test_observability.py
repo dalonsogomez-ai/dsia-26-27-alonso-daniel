@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import re
 
 import pytest
+from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
 
 from dsia_web.app import create_app
@@ -66,6 +68,19 @@ def test_each_request_is_logged_with_request_id_and_latency(client, caplog):
     assert re.search(r"method=GET route=/health status=200 latency_ms=\d+\.\d{2}$", lines[0])
 
 
+def test_error_after_the_response_started_is_reraised_and_counted():
+    # >> R6: si ya salieron las cabeceras no se puede enviar otro JSON; se relanza al servidor.
+    async def half_sent(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        raise RuntimeError("se cortó a mitad")
+
+    metrics = RequestMetrics()
+    client = TestClient(ObservabilityMiddleware(half_sent, metrics=metrics))  # > Sin lifespan: ASGI mínimo.
+    with pytest.raises(RuntimeError, match="se cortó a mitad"):
+        client.get("/cualquiera")
+    assert dict(metrics.counts) == {("unmatched", 200): 1}
+
+
 @pytest.mark.parametrize("method,path,kwargs,status,level", [
     ("GET", "/health", {}, 200, logging.INFO),
     # >> Tema 4, A1: lo que arregla el cliente cambiando la petición (4xx) va en WARNING, no en INFO.
@@ -120,6 +135,63 @@ def test_unreadable_journal_logs_one_error_and_a_warning_with_the_request_id(dem
     assert warnings == ["journal_unavailable request_id=diario-roto-01 error_type=IsADirectoryError"]
     [line] = error_lines(caplog)
     assert line.startswith("request request_id=diario-roto-01 method=GET route=/api/v1/pipeline status=503 ")
+
+
+def test_a_5xx_with_its_own_error_line_does_not_log_a_second_error(demo_run, caplog):
+    # > analyze_failed y unhandled_error ya alertan: la línea request de ese mismo 5xx no se duplica en ERROR.
+    class Broken:
+        def analyze(self, request):
+            raise KeyError("campo_interno")
+
+    symbol = demo_run.snapshot.predictions[0].symbol
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
+        with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=lambda: Broken())) as client:
+            response = client.post("/api/v1/analyze", json={"symbol": symbol}, headers={"X-Request-ID": "unico-error-1"})
+    assert response.status_code == 500
+    assert error_lines(caplog) == ["unhandled_error request_id=unico-error-1 route=/api/v1/analyze"]
+    [request_line] = [record for record in caplog.records if record.getMessage().startswith("request ")]
+    assert request_line.levelno == logging.INFO and " status=500 " in request_line.getMessage()
+
+
+def run_in_one_task(app, request_id="contexto-0001"):
+    """> Ejecuta el middleware y lee el ContextVar después, dentro de la MISMA tarea (sin portal ni hilos)."""
+    from dsia_web.observability import current_request_id
+
+    scope = {"type": "http", "method": "GET", "path": "/", "raw_path": b"/", "query_string": b"",
+             "root_path": "", "scheme": "http", "http_version": "1.1", "server": ("prueba", 80),
+             "client": ("192.0.2.1", 1234), "headers": [(b"x-request-id", request_id.encode())]}
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    async def scenario():
+        inside = []
+
+        async def spy(scope, receive, send):
+            inside.append(current_request_id())
+            await app(scope, receive, send)
+
+        await ObservabilityMiddleware(spy, metrics=RequestMetrics())(scope, receive, send)
+        return inside, current_request_id()
+
+    inside, after = asyncio.run(scenario())
+    return inside, after, sent[0]["status"]
+
+
+def test_request_id_context_is_reset_in_the_same_task_after_the_request():
+    # >> R11: dentro de la petición el ContextVar vale el request_id; al salir vuelve a "", también tras un 500.
+    async def ok(scope, receive, send):
+        await JSONResponse({"ok": True})(scope, receive, send)
+
+    async def broken(scope, receive, send):
+        raise KeyError("campo_interno")
+
+    assert run_in_one_task(ok) == (["contexto-0001"], "", 200)
+    assert run_in_one_task(broken) == (["contexto-0001"], "", 500)
 
 
 def test_request_metrics_summary_exact_values():

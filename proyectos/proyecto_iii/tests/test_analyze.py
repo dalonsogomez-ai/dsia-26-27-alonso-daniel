@@ -349,6 +349,31 @@ def test_analyze_request_is_logged_with_latency(demo_run, symbol, caplog):
                         r"model=mock-determinista-v1 latency_ms=\d+\.\d{2}", messages[0])
 
 
+# --- R6: error no controlado con la forma común ----------------------------------------------------
+
+def test_unexpected_error_is_a_typed_500_with_request_id_and_security_headers(demo_run, symbol, caplog):
+    class Broken:
+        def analyze(self, request):
+            raise KeyError("campo_interno")
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
+        with TestClient(create_app(demo_run.path, api_key="", ai_client_factory=lambda: Broken())) as client:
+            response = client.post(URL, json={"symbol": symbol.symbol}, headers={"X-Request-ID": "fallo-interno-1"})
+            metrics = client.get("/api/v1/metrics").json()
+    assert response.status_code == 500
+    assert response.json() == {"error": "internal_error", "request_id": "fallo-interno-1",
+                               "detail": {"code": "internal_error", "message": "Error interno."}}
+    assert response.headers["x-request-id"] == "fallo-interno-1"
+    assert response.headers["content-security-policy"] == "default-src 'self'; frame-ancestors 'none'"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "KeyError" not in response.text and "campo_interno" not in response.text
+    errors = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert [record.getMessage() for record in errors] == [
+        "unhandled_error request_id=fallo-interno-1 route=/api/v1/analyze"]
+    assert errors[0].exc_info is not None  # > La traza queda en el log del servidor, no en la respuesta.
+    assert {"route": "/api/v1/analyze", "status": 500, "count": 1} in metrics["requests"]
+
+
 # --- R11: request_id en las líneas del cliente del II ----------------------------------------------
 
 def test_provider_attempt_and_retry_lines_carry_the_request_id(demo_run, symbol, monkeypatch, caplog):

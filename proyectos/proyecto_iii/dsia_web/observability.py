@@ -1,4 +1,4 @@
-"""Middleware ASGI: request_id, latencia por petición, contadores en memoria y cabeceras de seguridad."""
+"""Middleware ASGI: request_id, latencia, contadores en memoria, cabeceras de seguridad y error 500 tipado."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Callable
 from uuid import uuid4
 
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 LOG = logging.getLogger("uvicorn.error").getChild("dsia")
@@ -145,11 +146,13 @@ class ObservabilityMiddleware:
         scope[SCOPE_KEY] = rid
         context = _REQUEST_ID.set(rid)
         status = 500
+        started = False
         start = perf_counter()
 
         async def send_with_headers(message: Message) -> None:
-            nonlocal status
+            nonlocal status, started
             if message["type"] == "http.response.start":
+                started = True
                 status = message["status"]
                 headers = MutableHeaders(scope=message)
                 headers["x-request-id"] = rid
@@ -159,6 +162,16 @@ class ObservabilityMiddleware:
 
         try:
             await self.app(scope, receive, send_with_headers)
+        except Exception:
+            # >> R6: handler central. Si ya salieron las cabeceras no cabe otro cuerpo: se relanza.
+            if started:
+                raise
+            # > La traza queda en el log con el request_id; la respuesta no la incluye.
+            LOG.exception("unhandled_error request_id=%s route=%s", rid, route_label(scope))
+            mark_error_logged(scope)
+            response = JSONResponse({"error": "internal_error", "detail": {
+                "code": "internal_error", "message": "Error interno."}, "request_id": rid}, status_code=500)
+            await response(scope, receive, send_with_headers)
         finally:
             _REQUEST_ID.reset(context)
             latency_ms = (perf_counter() - start) * 1000
