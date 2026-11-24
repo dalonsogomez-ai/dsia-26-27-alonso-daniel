@@ -74,7 +74,7 @@
 - `=>` **Aceptado:** campos `prediction_std`, `prediction_spread` y `top_symbol` en el resumen, con validación de tipos y rangos en `AnalysisRequest`; errores HF clasificados y hasta 2 reintentos con backoff y jitter; `AIClient.from_env()` y `DEFAULT_HF_MODEL`, compartidos con el III; `inspect` sin sobrescribir; `MIN_WEIGHT` de `1e-4`; bloqueo de `connect_ex` y `getaddrinfo` en los tests; métricas del smoke comparadas en el CI; `prog` de la CLI y errores de dominio en `analyze-summary`; documentación con fórmulas renderizables, tablas de métricas y cronología real.
 - `~>` **Rechazado:** afirmar una licencia MIT para todo el código, porque no hay LICENSE en la raíz; presentar el hash del artefacto como reproducible, porque incluye `created_utc`; mantener cifras antiguas de tests sin fecha.
 - `>>` **Verificación:** receta del README en una copia temporal con métricas idénticas a las publicadas; media diaria de las predicciones constante en las 428 fechas de la demo; `pytest` del II → 128 passed, 85,40 % de cobertura.
-- `>>` **Commits:** <commits del 24/11>.
+- `>>` **Commits:** `e6b4129`, `eefc6ed`, `4bc67aa`, `d92fe7e` y `cf03bc3` (código); `18eae40`, `0d33781`, `1a0b306`, `d4f7e6c`, `6aaebe2`, `24bcaee` y `521a7f8` (documentación).
 
 ## 2026-11-24 — Proveedor alternativo NVIDIA
 
@@ -84,7 +84,7 @@
 - `=>` **Aceptado:** proveedor `nvidia` con `DEFAULT_NVIDIA_MODEL = moonshotai/kimi-k3.1-pro` y `NVIDIA_BASE_URL`; transporte con el `InferenceClient` ya fijado (comprobado en el código instalado de `huggingface_hub` 1.33.0: `base_url` usa el helper `hf-inference`, que añade `/chat/completions`, manda `Authorization: Bearer` y fusiona `extra_body`), así que no entra ninguna dependencia nueva; `reasoning_effort="low"`, 1024 tokens y 60 s por defecto, límite de 4096 tokens solo para `nvidia`; `NVIDIA_MODEL`, `NVIDIA_TIMEOUT` y `NVIDIA_MAX_TOKENS` en `AIClient.from_env`; misma clasificación de errores y reintentos que HF; error claro sin reintento si solo llega razonamiento; `--provider nvidia` en la CLI, con `--model` aplicado a `NVIDIA_MODEL`.
 - `~>` **Rechazado:** usar `httpx` directamente, porque duplicaba el manejo de errores HTTP que ya da el SDK; reutilizar `HF_TIMEOUT` y `HF_MAX_TOKENS`, porque sus valores y límites por defecto no sirven a un modelo de razonamiento; sustituir `hf` por `nvidia` como proveedor por defecto o en el CI, que siguen en `mock`.
 - `>>` **Verificación:** 34 tests nuevos en el II, 32 de ellos ejecutados en rojo antes de implementar; `pytest` del II → 162 passed, 85,97 % de cobertura (antes 128 y 85,40 %), `ai_client.py` al 100 %; `marimo check` sin avisos; pruebas del III → 134 passed, 97,20 %. Ninguna prueba sale a la red y no se ha hecho ninguna llamada autenticada a NVIDIA.
-- `>>` **Commits:** pendientes; el cambio queda sin commit para que el autor lo revise.
+- `>>` **Commits:** `a86b9de`.
 
 ## Comandos de evidencia
 

@@ -73,6 +73,6 @@
 - **Aceptado:** `Explanation.provider` admite `nvidia`; `dsia_web.build from-run --provider nvidia`; `NVIDIA_API_KEY` (`sync: false`) y `NVIDIA_MODEL` en `render.yaml`, con `AI_PROVIDER` todavía en `mock`; pruebas de `/api/v1/analyze` con `AI_PROVIDER=nvidia` (200 con `provider: nvidia`; 503 sin filtrar la clave si el proveedor falla o falta la clave).
 - **Rechazado:** activar `nvidia` en Render desde el repositorio (lo decide el autor en el panel con su clave); cambiar el contrato HTTP de `/analyze`, que ya devolvía `provider` y `model`.
 - **Verificación:** pruebas del III → 134 passed, 97,20 % de cobertura de `dsia_web` (antes 128 y 97,20 %), sin red; las del II → 162 passed, 85,97 %.
-- **Commit:** pendiente; el cambio queda sin commit para que el autor lo revise.
+- **Commit:** `a86b9de`.
 
 `>>` [Arquitectura](../../docs/ARQUITECTURA_DSIA.md) · [Uso de IA del Proyecto II](../proyecto_ii/AI_USAGE.md) · [Uso de IA en los ficheros comunes](../../docs/AI_USAGE.md) · [RC](RELEASE.md)
