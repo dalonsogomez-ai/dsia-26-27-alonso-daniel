@@ -148,6 +148,13 @@ jobs:
             runs/dsia-evidence/pipeline.jsonl
           if-no-files-found: error
           retention-days: 30
+      - name: Documentación sin marcadores de commit pendientes
+        run: |
+          # > Los registros de IA citan cada cambio por su commit: un marcador sin sustituir no puede quedar en main.
+          status=0
+          git grep -nF '<commit-' -- '*.md' || status=$?
+          if [ "$status" -eq 0 ]; then echo "Hay marcadores de commit sin sustituir (líneas de arriba)" >&2; fi
+          test "$status" -eq 1
 
   proyecto-iii-docker:
     runs-on: ubuntu-latest
