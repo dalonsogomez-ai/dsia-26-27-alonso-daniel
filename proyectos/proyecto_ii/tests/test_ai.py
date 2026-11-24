@@ -110,6 +110,31 @@ def test_env_limits_defaults_and_valid_values(monkeypatch):
     assert env_number('HF_MAX_TOKENS', '256', int, 1, 512) == 128
 
 
+# --- A6: la suite no alcanza la red por ninguna vía -----------------------------------------------
+
+def test_suite_blocks_dns_and_connect_ex():
+    import socket
+    with pytest.raises(AssertionError, match='sin red'):
+        socket.getaddrinfo('huggingface.co', 443)
+    probe = socket.socket()
+    try:
+        with pytest.raises(AssertionError, match='sin red'):
+            probe.connect_ex(('127.0.0.1', 9))
+    finally:
+        probe.close()
+
+
+def test_subprocess_environment_is_mock_without_hf_variables(monkeypatch, offline_env):
+    import os
+    monkeypatch.setenv('AI_PROVIDER', 'hf')
+    monkeypatch.setenv('HF_TOKEN', 'hf_no-debe-viajar')
+    monkeypatch.setenv('HF_INFERENCE_PROVIDER', 'together')
+    env = offline_env()
+    assert env['AI_PROVIDER'] == 'mock'
+    assert not [name for name in env if name.startswith('HF_')]
+    assert env['PATH'] == os.environ['PATH']
+
+
 def test_cli_reports_invalid_timeout_clearly(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv('HF_TIMEOUT', 'abc')
     summary = tmp_path / 'summary.json'

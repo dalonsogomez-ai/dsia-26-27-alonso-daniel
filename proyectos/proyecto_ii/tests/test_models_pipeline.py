@@ -139,10 +139,10 @@ def test_hf_failure_preserves_predictions(trained, tmp_path, monkeypatch):
 
 
 @pytest.mark.integration
-def test_prepare_module_artifact_reload(bars_file, tmp_path):
+def test_prepare_module_artifact_reload(bars_file, tmp_path, offline_env):
     run = tmp_path / 'module-run'
     result = subprocess.run([sys.executable, '-m', 'swarmtrade_app.preparation', '--data', str(bars_file),
-                             '--run', str(run)], capture_output=True, text=True)
+                             '--run', str(run)], capture_output=True, text=True, env=offline_env())
     assert result.returncode == 0, result.stderr
     assert isinstance(joblib.load(run / 'prepared.joblib'), dict)
     train_prepared(run)

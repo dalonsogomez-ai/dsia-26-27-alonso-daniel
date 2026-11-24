@@ -1,3 +1,4 @@
+import os
 import socket
 
 import pytest
@@ -11,7 +12,9 @@ def block_network(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError('La suite se ejecuta sin red')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
+    monkeypatch.setattr(socket.socket, 'connect_ex', forbidden)
     monkeypatch.setattr(socket, 'create_connection', forbidden)
+    monkeypatch.setattr(socket, 'getaddrinfo', forbidden)
 
 
 @pytest.fixture(autouse=True)
@@ -21,6 +24,15 @@ def isolate_local_env(monkeypatch):
     monkeypatch.setenv('AI_PROVIDER', 'mock')
     for name in ('HF_TOKEN', 'HF_MODEL', 'HF_INFERENCE_PROVIDER', 'HF_TIMEOUT', 'HF_MAX_TOKENS'):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture
+def offline_env():
+    """>> Entorno para subprocesos: el bloqueo de red no cruza procesos, así que se fuerza mock sin HF_*."""
+    def build() -> dict[str, str]:
+        env = {name: value for name, value in os.environ.items() if not name.startswith('HF_')}
+        return env | {'AI_PROVIDER': 'mock'}
+    return build
 
 
 @pytest.fixture
