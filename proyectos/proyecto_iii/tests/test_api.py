@@ -77,6 +77,8 @@ def test_health_is_degraded_after_a_failed_provider_call_and_ready_after_a_good_
     # > Un proveedor desconocido no se publica ni se registra tal cual: solo «invalid» y su longitud.
     ({"AI_PROVIDER": "openai"}, "invalid",
      "config_invalid ai_provider=<no válido, 6 caracteres> Proveedor no soportado; usa mock, hf o nvidia"),
+    ({"AI_MOCK_MODE": "explota"}, "mock",
+     "config_invalid ai_provider=mock AI_MOCK_MODE debe ser down, timeout, invalid o bug"),
 ])
 def test_invalid_ai_configuration_is_reported_at_startup_without_stopping(demo_run, monkeypatch, caplog,
                                                                           env, provider, logged):

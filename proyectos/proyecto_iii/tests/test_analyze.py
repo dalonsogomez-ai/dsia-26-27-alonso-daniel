@@ -116,6 +116,40 @@ def test_ai_failure_kind_maps_to_typed_gateway_error_logged_as_error(demo_run, s
                         rf"code={code} latency_ms=\d+\.\d{{2}}", errors[0])
 
 
+@pytest.mark.parametrize(("mode", "status", "code", "level"), [
+    ("timeout", 504, "ai_timeout", "analyze_failed"),
+    ("invalid", 502, "ai_bad_response", "analyze_failed"),
+    ("down", 503, "ai_unavailable", "analyze_failed"),
+    ("bug", 500, "internal_error", "unhandled_error"),
+])
+def test_mock_failure_modes_reproduce_each_error_without_network(demo_run, symbol, monkeypatch, caplog,
+                                                                 mode, status, code, level):
+    # >> Tema 4, B2 y B9: el mock simula cada fallo por variable de entorno, sin red ni clave.
+    monkeypatch.setenv("AI_MOCK_MODE", mode)
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.dsia"):
+        with TestClient(create_app(demo_run.path, api_key="")) as client:
+            response = client.post(URL, json={"symbol": symbol.symbol}, headers={"X-Request-ID": f"modo-{mode}-0001"})
+    assert (response.status_code, response.json()["error"]) == (status, code)
+    assert response.json()["request_id"] == f"modo-{mode}-0001"
+    for leak in ("Traceback", "RuntimeError", "AI_MOCK_MODE", "simulado"):
+        assert leak not in response.text  # > Ni traza ni causa en el cuerpo: solo en el log.
+    errors = [record.getMessage() for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(errors) == 1 and errors[0].startswith(f"{level} request_id=modo-{mode}-0001")
+
+
+def test_mock_failure_mode_is_ignored_with_a_real_provider(demo_run, symbol, monkeypatch):
+    # > Solo actúa con AI_PROVIDER=mock: en Render (nvidia) la variable no cambia nada.
+    monkeypatch.setenv("AI_MOCK_MODE", "down")
+    monkeypatch.setenv("AI_PROVIDER", "nvidia")
+    monkeypatch.setenv("NVIDIA_API_KEY", NVIDIA_KEY)
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", lambda **kwargs: SimpleNamespace(
+        chat_completion=lambda **request: SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="Resumen real"))])))
+    with TestClient(create_app(demo_run.path, api_key="")) as client:
+        response = client.post(URL, json={"symbol": symbol.symbol})
+    assert (response.status_code, response.json()["provider"]) == (200, "nvidia")
+
+
 def nvidia_failure(error):
     """> Error HTTP real del SDK contra integrate.api.nvidia.com, sin red."""
     import httpx
