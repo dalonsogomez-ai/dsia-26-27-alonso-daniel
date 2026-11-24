@@ -31,6 +31,28 @@ def test_client_from_env_rejects_invalid_configuration_with_typed_error(env):
         client_from_env(env=env)
 
 
+@pytest.mark.parametrize(("env", "message"), [
+    ({"HF_TIMEOUT": "rápido"}, "HF_TIMEOUT debe ser un número entre 1 y 120"),
+    ({"HF_MAX_TOKENS": "0"}, "HF_MAX_TOKENS debe ser un número entre 1 y 512"),
+    ({"HF_MODEL": "modelo-sin-propietario"}, "HF_MODEL debe tener el formato propietario/nombre"),
+    ({"HF_INFERENCE_PROVIDER": "Together AI"}, "HF_INFERENCE_PROVIDER debe ser auto o un identificador")])
+def test_client_from_env_uses_the_domain_messages_of_project_ii_factory(env, message):
+    with pytest.raises(AIClientError, match=message):
+        client_from_env(env=env)
+
+
+def test_client_from_env_delegates_to_ai_client_from_env(monkeypatch):
+    seen = {}
+
+    def fake_from_env(environ=None):
+        seen["environ"] = dict(environ)
+        return "cliente"
+
+    monkeypatch.setattr(AIClient, "from_env", staticmethod(fake_from_env))
+    assert client_from_env("huggingface", env={"AI_PROVIDER": "mock", "HF_MODEL": "org/m"}) == "cliente"
+    assert seen["environ"] == {"AI_PROVIDER": "huggingface", "HF_MODEL": "org/m"}
+
+
 def test_from_run_provider_defaults_to_ai_provider(demo_run, tmp_path, monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "hf")
     monkeypatch.setenv("HF_TOKEN", "")

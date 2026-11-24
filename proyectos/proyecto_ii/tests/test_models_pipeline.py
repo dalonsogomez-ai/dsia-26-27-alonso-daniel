@@ -235,7 +235,8 @@ def test_hf_failure_log_names_error_type_without_secret(caplog, monkeypatch):
     monkeypatch.setattr(huggingface_hub, 'InferenceClient', Broken)
     caplog.set_level(logging.INFO)
     with pytest.raises(AIClientError):
-        AIClient('hf').analyze(AnalysisRequest('2026-09-28', 'ridge', 21, 6, 0.01, 0.06, 'synthetic'))
+        AIClient('hf', sleep=lambda seconds: None).analyze(
+            AnalysisRequest('2026-09-28', 'ridge', 21, 6, 0.01, 0.06, 'synthetic'))
     assert 'error_type=TimeoutError' in caplog.text and 'ai_status=failed' in caplog.text
     assert 'secreto-en-el-mensaje' not in caplog.text
 

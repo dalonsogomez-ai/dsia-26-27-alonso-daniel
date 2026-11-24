@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from ml_pipeline import guard
 
-from .ai_client import AIClient, AIClientError, AnalysisRequest
+from .ai_client import DEFAULT_HF_MODEL, AIClient, AIClientError, AnalysisRequest
 from .data import DataError, generate_demo
 from .paper import PaperError
 
@@ -26,21 +26,16 @@ def provider_name(value: str) -> str:
     return 'hf' if name == 'huggingface' else name
 
 
-def env_number(name: str, default: str, cast: type, low: float, high: float) -> float | int:
-    """> Lee un límite numérico del entorno con un error de dominio en lugar del de Python."""
-    raw = os.getenv(name, default).strip()
-    try:
-        value = cast(raw)
-    except ValueError:
-        value = None
-    if value is None or not low <= value <= high:
-        raise DataError(f'{name} debe ser un número entre {low:g} y {high:g}')
-    return value
+def client_from_args(args: argparse.Namespace) -> AIClient:
+    """> --provider y --model, si se indican, sustituyen a AI_PROVIDER y HF_MODEL; el resto sale de HF_*."""
+    overrides = {name: value for name, value in (('AI_PROVIDER', args.provider), ('HF_MODEL', args.model)) if value}
+    return AIClient.from_env({**os.environ, **overrides})
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(ROOT / '.env', override=False)
-    parser = argparse.ArgumentParser(description='-> SwarmTrader × DSIA: datos, sklearn y API HF')
+    parser = argparse.ArgumentParser(prog='python -m swarmtrade_app',
+                                     description='-> SwarmTrader × DSIA: datos, sklearn y API HF')
     parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                         help='Nivel de los logs por etapa en stderr (antes del subcomando)')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -71,8 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument('--scenarios', type=int, default=3000)
     run.add_argument('--mean-source', choices=['model', 'empirical'], default='model')
     run.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
-                     default=os.getenv('AI_PROVIDER', 'mock'), help='mock, hf o su alias huggingface')
-    run.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
+                     help='mock, hf o su alias huggingface; por defecto AI_PROVIDER o mock')
+    run.add_argument('--model', help=f'propietario/nombre; por defecto HF_MODEL o {DEFAULT_HF_MODEL}')
     plan = commands.add_parser('paper-plan', help='Consultar cuenta paper y guardar plan; no envía órdenes')
     plan.add_argument('--report', type=Path, required=True)
     plan.add_argument('--output', type=Path, required=True)
@@ -84,8 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     analyze = commands.add_parser('analyze-summary', help='Explicar un resumen agregado tipado')
     analyze.add_argument('--summary', type=Path, required=True)
     analyze.add_argument('--provider', type=provider_name, choices=['mock', 'hf'],
-                         default=os.getenv('AI_PROVIDER', 'mock'), help='mock, hf o su alias huggingface')
-    analyze.add_argument('--model', default=os.getenv('HF_MODEL', 'Qwen/Qwen2.5-7B-Instruct'))
+                         help='mock, hf o su alias huggingface; por defecto AI_PROVIDER o mock')
+    analyze.add_argument('--model', help=f'propietario/nombre; por defecto HF_MODEL o {DEFAULT_HF_MODEL}')
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
     logging.getLogger().setLevel(args.log_level)
@@ -123,10 +118,8 @@ def main(argv: list[str] | None = None) -> int:
                 result = broker.execute(json.loads(args.plan.read_text()), args.journal, liquidate=args.liquidate)
         else:
             from .pipeline import run_pipeline
-            client = AIClient(args.provider, args.model, timeout=env_number('HF_TIMEOUT', '30', float, 1, 120),
-                              max_tokens=env_number('HF_MAX_TOKENS', '256', int, 1, 512),
-                              inference_provider=os.getenv('HF_INFERENCE_PROVIDER', 'auto'))
-            if args.provider == 'hf' and not os.getenv('HF_TOKEN', '').strip():
+            client = client_from_args(args)
+            if client.provider == 'hf' and not os.getenv('HF_TOKEN', '').strip():
                 # > Error de configuración: se detecta antes de inferir/optimizar. El informe `pending`
                 # queda para fallos del servicio HF una vez iniciada la llamada.
                 raise AIClientError('Falta HF_TOKEN en el entorno')
@@ -135,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
                                       risk_aversion=args.risk_aversion, scenarios=args.scenarios,
                                       mean_source=args.mean_source)
             else:
-                request = AnalysisRequest(**json.loads(args.summary.read_text()))
+                request = AnalysisRequest.from_dict(json.loads(args.summary.read_text()))
                 result = asdict(client.analyze(request))
         print(json.dumps(result, indent=2, default=str, ensure_ascii=False, allow_nan=False))
         LOG.info('Fin command=%s', args.command)
