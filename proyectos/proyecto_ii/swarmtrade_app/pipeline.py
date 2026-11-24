@@ -18,8 +18,9 @@ from .ai_client import AIClient, AnalysisRequest
 from .data import DataError, FEATURES, feature_panel, file_sha256, load_bars
 
 LOG = logging.getLogger(__name__)
-# > Pesos por debajo de este umbral son residuo numérico del solver, no una decisión de cartera.
-MIN_WEIGHT = 1e-6
+# > Pesos por debajo de este umbral son residuo numérico del solver, no una decisión de cartera:
+# 1e-4 equivale a 1 USD sobre el nocional de 10.000 USD, el mínimo de una orden nocional en Alpaca.
+MIN_WEIGHT = 1e-4
 
 
 def significant_weights(weights, threshold: float = MIN_WEIGHT) -> np.ndarray:
@@ -52,17 +53,25 @@ def infer(data: Path, artifact_path: Path) -> tuple[dict, dict, pd.DataFrame]:
     if not np.isfinite(prediction).all():
         raise DataError('Predicción no finita')
     name = artifact['report']['selected']
-    summary = AnalysisRequest(str(as_of.date()), name, artifact['horizon'], len(latest),
+    # > Con factores z-score por fecha la media diaria es constante (media del target en train):
+    # la información está en el orden relativo, así que la IA recibe también dispersión, rango y mejor señal.
+    best = int(np.argmax(prediction))
+    summary = AnalysisRequest(str(as_of.date()), name, int(artifact['horizon']), len(latest),
                               float(prediction.mean()), artifact['report']['validation'][name]['rmse'],
-                              artifact['report']['metadata']['data_kind'])
+                              artifact['report']['metadata']['data_kind'],
+                              prediction_std=float(prediction.std()),
+                              prediction_spread=float(prediction.max() - prediction.min()),
+                              top_symbol=str(latest['symbol'].iloc[best]))
     report = {'schema': 1, 'summary': asdict(summary), 'input_sha256': file_sha256(data),
               'artifact_sha256': file_sha256(artifact_path),
               'predictions': [{'symbol': s, 'predicted_return': float(p)}
                               for s, p in zip(latest['symbol'], prediction)],
               'research_status': 'NO ACCIONABLE / ventaja no demostrada',
               'upstream_version': '1.4.0', 'execution': 'none'}
-    LOG.info('Inferencia as_of=%s model=%s symbols=%d artifact_sha256=%s mean_prediction=%.6f',
-             summary.as_of, name, summary.symbols, report['artifact_sha256'][:12], summary.mean_prediction)
+    LOG.info('Inferencia as_of=%s model=%s symbols=%d artifact_sha256=%s mean_prediction=%.6f '
+             'prediction_std=%.6f prediction_spread=%.6f top_symbol=%s', summary.as_of, name, summary.symbols,
+             report['artifact_sha256'][:12], summary.mean_prediction, summary.prediction_std,
+             summary.prediction_spread, summary.top_symbol)
     return report, artifact, bars
 
 
@@ -145,7 +154,7 @@ def run_pipeline(data: Path, artifact_path: Path, output: Path, client: AIClient
     report['ai_status'] = 'pending'
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
     LOG.info('Informe provisional output=%s ai_status=pending', output.name)
-    report['analysis'] = asdict(client.analyze(AnalysisRequest(**report['summary'])))
+    report['analysis'] = asdict(client.analyze(AnalysisRequest.from_dict(report['summary'])))
     report['ai_status'] = 'completed'
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
     LOG.info('Informe final output=%s ai_status=completed', output.name)

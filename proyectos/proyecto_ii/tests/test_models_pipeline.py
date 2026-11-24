@@ -171,12 +171,49 @@ def test_conviction_risk_neutral_uses_model_argmax(trained):
 
 def test_significant_weights_drops_residuals_and_renormalizes():
     from swarmtrade_app.pipeline import significant_weights
-    result = significant_weights([5.7e-08, 1.5e-09, 0.99999, 9.7e-06, -1e-12])
+    result = significant_weights([5.7e-08, 1.5e-09, 0.9998, 1.5e-04, -1e-12])
     assert result[0] == result[1] == result[4] == 0
     assert result.sum() == pytest.approx(1, abs=1e-15)
-    assert result[3] == pytest.approx(9.7e-06 / (0.99999 + 9.7e-06))
+    assert result[3] == pytest.approx(1.5e-04 / (0.9998 + 1.5e-04))
     with pytest.raises(DataError, match='significativos'):
         significant_weights([1e-9, 0.0])
+
+
+def test_min_weight_is_one_dollar_on_ten_thousand():
+    # >> 1e-4 × 10.000 USD = 1 USD: por debajo, el peso daría una orden nocional inferior al mínimo de Alpaca.
+    from swarmtrade_app.pipeline import MIN_WEIGHT, significant_weights
+    assert MIN_WEIGHT == 1e-4
+    assert MIN_WEIGHT * 10_000 == pytest.approx(1)
+    result = significant_weights([0.99995, 5e-05])
+    assert list(result) == [1.0, 0.0]
+    kept = significant_weights([0.9999, 1e-04])
+    assert kept[1] == pytest.approx(1e-04)
+
+
+def test_summary_carries_dispersion_spread_and_top_signal(trained):
+    data, run, _, _ = trained
+    report, _, _ = infer(data, run / 'model.joblib')
+    predictions = np.array([r['predicted_return'] for r in report['predictions']])
+    summary = report['summary']
+    assert summary['mean_prediction'] == pytest.approx(predictions.mean())
+    assert summary['prediction_std'] == pytest.approx(predictions.std())
+    assert summary['prediction_spread'] == pytest.approx(predictions.max() - predictions.min())
+    best = max(report['predictions'], key=lambda r: r['predicted_return'])['symbol']
+    assert summary['top_symbol'] == best
+    assert summary['prediction_std'] > 0
+
+
+def test_linear_models_keep_daily_mean_prediction_constant(trained):
+    # >> Factores z-score por fecha: la media diaria de un modelo lineal es su media del target en train.
+    from swarmtrade_app.data import feature_panel, load_bars
+    data, run, prepared, _ = trained
+    artifact = joblib.load(run / 'model.joblib')
+    panel = feature_panel(load_bars(data))
+    dates = panel['date'].drop_duplicates().iloc[-5:]
+    rows = panel.loc[panel['date'].isin(dates)]
+    daily = pd.Series(artifact['estimator'].predict(rows.loc[:, FEATURES]), index=rows.index).groupby(rows['date']).mean()
+    assert daily.max() - daily.min() == pytest.approx(0, abs=1e-12)
+    assert daily.iloc[0] == pytest.approx(prepared.train['target'].mean(), abs=1e-12)
 
 
 def test_model_allocation_has_no_residual_weights(trained, monkeypatch):
@@ -193,7 +230,8 @@ def test_model_allocation_has_no_residual_weights(trained, monkeypatch):
     report, artifact, bars = infer(data, run / 'model.joblib')
     result = conviction(report, artifact, bars, scenarios=100)
     assert len(result['weights']) < 6
-    assert min(result['weights'].values()) >= 1e-6
+    assert min(result['weights'].values()) >= pipeline.MIN_WEIGHT
+    assert result['info']['min_weight_reported'] == 1e-4
     assert sum(result['weights'].values()) == pytest.approx(1, abs=1e-12)
     assert sum(row['weight'] for row in result['table']) == pytest.approx(1, abs=1e-12)
 
